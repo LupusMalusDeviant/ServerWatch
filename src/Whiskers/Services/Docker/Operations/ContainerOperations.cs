@@ -276,7 +276,23 @@ internal sealed class ContainerOperations
         var sb = new StringBuilder();
         var stdout = new MemoryStream();
         var stderr = new MemoryStream();
-        await muxStream.CopyOutputToAsync(Stream.Null, stdout, stderr, CancellationToken.None);
+
+        // Drain the multiplexed stream frame by frame until EOF instead of using CopyOutputToAsync.
+        // Measured against a live daemon: for a short response (a `since` window holding a single line)
+        // CopyOutputToAsync returned with ZERO bytes while the very same request over curl returned the
+        // line — so a container that logs rarely was silently never matched, while a chatty one worked.
+        // "No new lines" and "read produced nothing" are indistinguishable downstream, which is why this
+        // stayed invisible: the alert simply never fired.
+        var buffer = new byte[16 * 1024];
+        while (true)
+        {
+            var read = await muxStream.ReadOutputAsync(buffer, 0, buffer.Length, CancellationToken.None);
+            if (read.EOF) break;
+            if (read.Count == 0) continue;
+
+            var target = read.Target == MultiplexedStream.TargetStream.StandardError ? stderr : stdout;
+            await target.WriteAsync(buffer.AsMemory(0, read.Count));
+        }
 
         stdout.Position = 0;
         using var stdoutReader = new StreamReader(stdout);
