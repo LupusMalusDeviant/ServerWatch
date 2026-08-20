@@ -286,6 +286,11 @@ internal sealed class ContainerOperations
         using var stderrReader = new StreamReader(stderr);
         sb.Append(await stderrReader.ReadToEndAsync());
 
+        // What the read actually produced, so an empty result can be told apart from a failed one.
+        _logger.LogDebug("Log read {Container} on {Server}: tail={Tail} since={Since} → {Out}B stdout, {Err}B stderr",
+            containerId.Length > 12 ? containerId[..12] : containerId, serverId ?? "default",
+            logParams.Tail, logParams.Since ?? "-", stdout.Length, stderr.Length);
+
         return sb.Length > 0 ? sb.ToString() : "(no logs available)";
     }
 
