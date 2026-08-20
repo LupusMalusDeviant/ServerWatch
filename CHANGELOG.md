@@ -12,7 +12,10 @@ All notable changes to Whiskers are documented here. The format follows
   covering that host quietly stopped producing anything, which looks exactly like "all quiet". The health
   monitor now emits `server_unreachable` after two consecutive failed cycles
   (`HealthMonitor:ServerUnreachableCycles`) and `server_recovered` when the host is back. Both are
-  rendered by every channel, link to `/servers`, and can drive an AI trigger.
+  rendered by every channel, link to `/servers`, and can drive an AI trigger. A server that has not
+  answered once since startup gets a longer grace (`ServerUnreachableColdStartCycles`, default 10 cycles),
+  because remote connections need a moment after a restart — without it a six-server fleet produced ten
+  notifications per deploy.
 - **The alert history is finally written.** `AlertHistory` has existed since the first migration but
   nothing ever wrote to it, so "what fired last week, and on which host?" was unanswerable. Every
   delivered notification is now recorded with its server, container, type and message; a

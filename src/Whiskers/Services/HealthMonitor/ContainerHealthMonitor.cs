@@ -39,7 +39,8 @@ public class ContainerHealthMonitor : BackgroundService
         _hubContext = hubContext;
         _settings = settings.Value;
         _logger = logger;
-        _reachability = new ServerReachabilityTracker(_settings.ServerUnreachableCycles);
+        _reachability = new ServerReachabilityTracker(
+            _settings.ServerUnreachableCycles, _settings.ServerUnreachableColdStartCycles);
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)

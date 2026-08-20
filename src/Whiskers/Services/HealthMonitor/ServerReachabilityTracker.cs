@@ -12,14 +12,26 @@ namespace Whiskers.Services.HealthMonitor;
 /// <para>A single failed cycle is not an outage (a tunnel rebuild or a host slower than the listing's 8s
 /// bound trips it), so an alert needs <paramref name="threshold"/> consecutive failures. Each outage is
 /// announced once and closed by exactly one recovery.</para>
+/// <para><b>Cold start.</b> An outage is a TRANSITION. Right after a restart the remote connections
+/// (SSH tunnels, mTLS sessions) are not up yet, so every server fails the first cycles — measured on a
+/// six-server fleet that produced ten pointless notifications per restart, which is exactly how an alert
+/// gets ignored. A server that has not answered even once since start therefore needs the much longer
+/// <paramref name="coldStartThreshold"/> before it counts as unreachable; once it has answered, the normal
+/// threshold applies. A host that really is dead at startup is still reported, just later.</para>
 /// </summary>
 public sealed class ServerReachabilityTracker
 {
     private readonly int _threshold;
+    private readonly int _coldStartThreshold;
     private readonly ConcurrentDictionary<string, int> _failStreak = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, bool> _outageAlerted = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, bool> _everAnswered = new(StringComparer.OrdinalIgnoreCase);
 
-    public ServerReachabilityTracker(int threshold) => _threshold = Math.Max(1, threshold);
+    public ServerReachabilityTracker(int threshold, int coldStartThreshold)
+    {
+        _threshold = Math.Max(1, threshold);
+        _coldStartThreshold = Math.Max(_threshold, coldStartThreshold);
+    }
 
     /// <summary>Folds one cycle's listing into the tracker and returns the events to send (usually none).</summary>
     public IReadOnlyList<NotificationEvent> Evaluate(FleetContainerListing listing)
@@ -29,7 +41,8 @@ public sealed class ServerReachabilityTracker
         foreach (var failure in listing.FailedServers)
         {
             var streak = _failStreak.AddOrUpdate(failure.ServerId, 1, (_, prev) => prev + 1);
-            if (streak < _threshold || _outageAlerted.GetValueOrDefault(failure.ServerId)) continue;
+            var needed = _everAnswered.ContainsKey(failure.ServerId) ? _threshold : _coldStartThreshold;
+            if (streak < needed || _outageAlerted.GetValueOrDefault(failure.ServerId)) continue;
 
             _outageAlerted[failure.ServerId] = true;
             events.Add(new NotificationEvent
@@ -44,6 +57,7 @@ public sealed class ServerReachabilityTracker
 
         foreach (var serverId in listing.RespondedServerIds)
         {
+            _everAnswered[serverId] = true;
             _failStreak.TryRemove(serverId, out _);
             if (!_outageAlerted.TryRemove(serverId, out var wasAlerted) || !wasAlerted) continue;
 
@@ -64,6 +78,7 @@ public sealed class ServerReachabilityTracker
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var id in _failStreak.Keys) if (!known.Contains(id)) _failStreak.TryRemove(id, out _);
         foreach (var id in _outageAlerted.Keys) if (!known.Contains(id)) _outageAlerted.TryRemove(id, out _);
+        foreach (var id in _everAnswered.Keys) if (!known.Contains(id)) _everAnswered.TryRemove(id, out _);
 
         return events;
     }
