@@ -33,8 +33,15 @@ install -m 0755 deploy/tailnet-guard.sh /usr/local/sbin/tailnet-guard
 /usr/local/sbin/tailnet-guard --check-only     # report only, never acts
 ```
 
-- at the end of your deploy script, after `docker compose up`, so a deploy can never leave the fleet cut off
-- as a systemd timer (5 min) for the churn that happens outside deploys
+- at the end of your deploy script, after `docker compose up` — and once more ~45s later: the breakage has
+  been observed *after* the compose call returned, so a single immediate check can pass and still leave the
+  fleet cut off
+- as a systemd timer (every 60s) for the churn that happens outside deploys, and as the backstop for the
+  delayed case above
+
+Repairs are serialized with `flock`: the timer and a deploy's postflight can fire together, and two
+concurrent `systemctl restart tailscaled` runs race each other into a worse state than the one being
+repaired.
 
 Complementary hardening for hosts running `systemd-networkd`: mark the tun unmanaged
 (`[Match] Name=tailscale0` + `[Link] Unmanaged=yes`) and set `ManageForeignRoutes=no` /

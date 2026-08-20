@@ -21,6 +21,17 @@ CHECK_ONLY=0
 
 log() { echo "$*"; logger -t tailnet-guard -- "$*"; }
 
+# One repair at a time. The timer and a deploy's postflight can fire together, and two concurrent
+# `systemctl restart tailscaled` runs race each other into a worse state than the one being repaired.
+# A read-only check needs no lock.
+if [ "$CHECK_ONLY" = 0 ]; then
+    exec 9>/run/tailnet-guard.lock || true
+    if ! flock -n 9; then
+        echo "another tailnet-guard run holds the lock — skipping"
+        exit 0
+    fi
+fi
+
 probe_targets() {
     # The fleet's own Docker endpoints are the most honest probe: that is the path that must work.
     python3 - "$SERVERS_JSON" <<'PY' 2>/dev/null
