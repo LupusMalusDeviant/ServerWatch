@@ -42,6 +42,8 @@ public static class AiTriggerEvents
         ("image_update",  "Image-Update verfügbar"),
         ("cve_finding",   "Neue CVE gefunden"),
         ("log_alert",     "Log-Alert / Fehler im Log"),
+        ("server_unreachable", "Server nicht erreichbar"),
+        ("server_recovered",   "Server wieder erreichbar"),
         ("auto_update_failed", "Auto-Update fehlgeschlagen"),
         ("high_cpu",      "Hohe CPU-Last (Schwellwert)"),
         ("high_memory",   "Hohe RAM-Last (Schwellwert)"),

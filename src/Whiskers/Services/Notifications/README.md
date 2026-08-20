@@ -11,7 +11,7 @@ Each channel has its own interface (distinct strategies) so the composite can en
 | `INotificationService.cs` | The notification surface consumers call (channel-agnostic). |
 | `INotificationChannel.cs` | The unifying channel contract (changeme C9): every channel implements it, so the composite fans out over `IEnumerable<INotificationChannel>` instead of hard-wiring each one. `Name` defaults to the type name minus `NotificationService`. |
 | `NoopNotificationService.cs` | Core default `INotificationService` that does nothing. Registered before the module loop so every consumer still resolves when the **Notifications module** is off; the module's composite wins by last-registration when on (RoadToSAP Phase 1). |
-| `CompositeNotificationService.cs` | Delegates each notification to all configured channels + the in-app feed + the AI-trigger dispatcher. |
+| `CompositeNotificationService.cs` | Delegates each notification to all configured channels + the in-app feed + the AI-trigger dispatcher. Also the single enforcement point for the per-container mute/prefs and the writer of the persisted `AlertHistory`. |
 | `NotificationFormatter.cs` | Single source of truth: event → title / severity / detail / in-app link, shared by the store and the outbound channels. |
 | `IMattermostNotificationService.cs` / `MattermostNotificationService.cs` | Mattermost channel (webhook). |
 | `IMatrixNotificationService.cs` / `MatrixNotificationService.cs` | Matrix channel. |
@@ -25,6 +25,25 @@ Each channel has its own interface (distinct strategies) so the composite can en
 | `NotificationThrottler.cs` | Suppresses duplicate/flapping notifications within a time window (read live from settings per call, so a changed window takes effect immediately; the map self-prunes so it can't grow unbounded). |
 | `NotificationRetry.cs` | Retries a send once on failure and never propagates (safe inside a monitoring loop). With the per-client 15s HttpClient timeout, this bounds how long a slow endpoint can delay a background cycle. |
 | `InAppNotificationStore.cs` | `IInAppNotificationStore`, the bell feed + persistent history (no external channel needed); fed by the composite. Keeps an in-memory cache for the bell's live updates AND write-through-persists every event to SQLite (`NotificationEntity`), hydrating on startup so the history survives restarts. Formats each event into an `InAppNotification` (title, severity) with a relative, path-base-safe `Link`, and serves the filtered/paged query for the `/notifications` page ([`../../Components/Pages/NotificationsLog.razor`](../../Components/Pages/NotificationsLog.razor)). |
+
+## Cross-cutting rules enforced by the composite
+
+- **Mute/prefs are checked once, centrally.** They used to be consulted only by the container health
+  monitor, so muting a container still let its log alerts, CVE findings, image updates and metric alarms
+  through. Every producer now passes the same gate. Events without a container name (server-level events
+  such as `server_unreachable`) are never suppressed by it.
+- **Every delivered event is persisted to `AlertHistory`** (server id, container, type, message) — the
+  queryable, fleet-aware record behind the in-app feed. Retention is handled by the metrics collector's
+  hourly prune. A failing history write never blocks the notification itself.
+- **HTML encoding.** Matrix renders `formatted_body` as HTML, so its message is built from an escaped copy
+  of the event (`MatrixNotificationService.HtmlEscaped`) — the log-alert detail carries raw log lines, which
+  are third-party text. The plain-text body stays verbatim.
+
+## Server-level events
+
+`server_unreachable` / `server_recovered` come from the [health monitor](../HealthMonitor/) when a host
+stops answering the fleet-wide container listing. They carry `ServerId`/`ServerName` instead of a
+container, link to `/servers`, and are available as AI-trigger event types.
 
 ## Secret hygiene
 

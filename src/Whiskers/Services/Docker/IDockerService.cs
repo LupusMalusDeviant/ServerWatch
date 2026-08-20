@@ -6,6 +6,11 @@ public interface IDockerService
 {
     Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null);
     Task<IList<ContainerInfo>> ListAllContainersAsync(bool all = true);
+
+    /// <summary>Fleet-wide list PLUS which servers answered. Callers that keep per-server state across
+    /// cycles need that distinction — an unreachable host and an empty host look identical in the plain
+    /// list. See <see cref="FleetContainerListing"/>.</summary>
+    Task<FleetContainerListing> ListAllContainersDetailedAsync(bool all = true);
     Task<ContainerInfo?> GetContainerAsync(string id, string? serverId = null);
     Task<ContainerStats?> GetContainerStatsAsync(string containerId, string? serverId = null);
     Task StartContainerAsync(string containerId, string? serverId = null);

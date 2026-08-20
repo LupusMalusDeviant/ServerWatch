@@ -26,8 +26,13 @@ same fleet-wide list `ContainerHealthMonitor` uses). Consequences worth knowing:
   Whiskers itself runs on (`ConnectionType.Local`, else the default server) — a namesake on a remote host
   is a different process and stays monitored.
 
-`LogSearchService` is *not* fleet-wide: without an explicit `serverId` it still searches the default
-server only.
+`LogSearchService` follows the same rule: without an explicit `serverId` it searches every server and
+fetches each container's logs from its own host; results carry `ServerId`/`ServerName` because container
+names repeat across a fleet.
+
+Per cycle a container transfers at most `TailLines` (200) lines: the Docker call applies the tail limit
+even when a `since` watermark is set, so one very chatty container can no longer pull its whole burst over
+a remote connection every minute.
 
 ## Wiring
 

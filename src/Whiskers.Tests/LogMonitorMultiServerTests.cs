@@ -160,7 +160,7 @@ public sealed class LogMonitorMultiServerTests : IDisposable
 
         Assert.Equal(
             new[] { "Badwolf (local)", "LupusMalus" },
-            notifications.Events.Select(e => e.ImageInfo!.Split('@')[^1].Trim()).OrderBy(s => s).ToArray());
+            notifications.Events.Select(e => e.ServerName!).OrderBy(s => s).ToArray());
     }
 
     [Fact]
@@ -224,6 +224,38 @@ public sealed class LogMonitorMultiServerTests : IDisposable
         Assert.Equal(new[] { "hetzner-apps" }, LogMonitorService.ResolveSelfServerIds(servers).ToArray());
     }
 
+    [Fact]
+    public async Task Keeps_a_silent_servers_watermark_so_its_outage_window_is_still_scanned()
+    {
+        // An unreachable host contributes no containers. Dropping its watermark would re-baseline it to
+        // "now" on recovery — everything logged during the outage would never be looked at.
+        SeedRule();
+        var docker = new FakeDocker(
+            Container("c-local", "authentik-worker-1", "local", "Badwolf (local)"),
+            Container("c-remote", "burg-web", "infomaniak", "LupusMalus"));
+        var notifications = new FakeNotifications();
+        var monitor = Monitor(docker, notifications, TwoServers());
+
+        await monitor.RunScanCycleAsync(CancellationToken.None);   // baseline both hosts
+        await Task.Delay(40);
+
+        // The line is written while the host is silent, and only becomes readable once it is back.
+        docker.AddTimedLine("infomaniak", "c-remote", DateTime.UtcNow, "FATAL: happened during the outage");
+        docker.UnreachableServerIds.Add("infomaniak");
+        await Task.Delay(40);
+
+        await monitor.RunScanCycleAsync(CancellationToken.None);   // outage cycle: no containers, no prune
+        Assert.Empty(notifications.Events);
+        await Task.Delay(40);
+
+        docker.UnreachableServerIds.Remove("infomaniak");
+        await monitor.RunScanCycleAsync(CancellationToken.None);   // recovery: reads from the OLD watermark
+
+        var evt = Assert.Single(notifications.Events);
+        Assert.Equal("burg-web", evt.ContainerName);
+        Assert.Contains("happened during the outage", evt.ImageInfo);
+    }
+
     // --- rule targeting --------------------------------------------------------------------------------
 
     [Fact]
@@ -263,86 +295,4 @@ public sealed class LogMonitorMultiServerTests : IDisposable
         Assert.True(LogMonitorService.RuleApplies(rule, Container("a", "anything", "rabenhof", "Rabenhof")));
     }
 
-    // --- fakes -----------------------------------------------------------------------------------------
-
-    private sealed record LogCall(string ContainerId, string? ServerId, DateTime? Since);
-
-    private sealed class FakeNotifications : INotificationService
-    {
-        public List<NotificationEvent> Events { get; } = new();
-        public Task SendAsync(NotificationEvent evt) { Events.Add(evt); return Task.CompletedTask; }
-        public Task SendTestAsync() => Task.CompletedTask;
-    }
-
-    private sealed class FakeServerConfig : IServerConfigService
-    {
-        private readonly List<Whiskers.Models.ServerConfig> _servers;
-        public FakeServerConfig(params Whiskers.Models.ServerConfig[] servers) => _servers = servers.ToList();
-
-        public bool IsInitialized => true;
-        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public List<Whiskers.Models.ServerConfig> GetServers() => _servers;
-        public List<Whiskers.Models.ServerConfig> GetEnabledServers() => _servers.Where(s => s.Enabled).ToList();
-        public Whiskers.Models.ServerConfig? GetServer(string serverId) => _servers.FirstOrDefault(s => s.Id == serverId);
-        public Whiskers.Models.ServerConfig? GetDefaultServer() => _servers.FirstOrDefault(s => s.IsDefault) ?? _servers.FirstOrDefault();
-        public bool SupportsTerminal(string? serverId) => false;
-        public Task AddServerAsync(Whiskers.Models.ServerConfig server) => throw new NotSupportedException();
-        public Task UpdateServerAsync(Whiskers.Models.ServerConfig server) => throw new NotSupportedException();
-        public Task RemoveServerAsync(string serverId) => throw new NotSupportedException();
-        public Task SaveSshKeyAsync(string serverId, string fileName, byte[] keyData) => throw new NotSupportedException();
-        public string? GetSshKeyPath(Whiskers.Models.ServerConfig server) => null;
-        public Task DeleteSshKeyAsync(string serverId) => throw new NotSupportedException();
-    }
-
-    /// <summary>Docker double: serves a fixed fleet, records every log call and answers per
-    /// "{serverId}/{containerId}" so a call landing on the wrong host returns nothing.</summary>
-    private sealed class FakeDocker : IDockerService
-    {
-        private readonly List<ContainerInfo> _containers;
-        public FakeDocker(params ContainerInfo[] containers) => _containers = containers.ToList();
-
-        public Dictionary<string, string> Logs { get; } = new();
-        public HashSet<string> FailingServerIds { get; } = new();
-        public ConcurrentBag<LogCall> Calls { get; } = new();
-        public List<LogCall> LogCalls => Calls.OrderBy(c => c.ContainerId, StringComparer.Ordinal)
-            .ThenBy(c => c.ServerId, StringComparer.Ordinal).ToList();
-
-        public Task<IList<ContainerInfo>> ListAllContainersAsync(bool all = true)
-            => Task.FromResult<IList<ContainerInfo>>(_containers.ToList());
-
-        public Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null)
-            => Task.FromResult<IList<ContainerInfo>>(
-                _containers.Where(c => c.ServerId == (serverId ?? "local")).ToList());
-
-        public Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null)
-        {
-            Calls.Add(new LogCall(containerId, serverId, since));
-            if (FailingServerIds.Contains(serverId ?? "")) throw new InvalidOperationException("host down");
-            return Task.FromResult(Logs.TryGetValue($"{serverId}/{containerId}", out var log) ? log : "(no logs available)");
-        }
-
-        // --- unused by the monitor ---------------------------------------------------------------------
-        public Task<ContainerInfo?> GetContainerAsync(string id, string? serverId = null) => throw new NotSupportedException();
-        public Task<ContainerStats?> GetContainerStatsAsync(string containerId, string? serverId = null) => throw new NotSupportedException();
-        public Task StartContainerAsync(string containerId, string? serverId = null) => throw new NotSupportedException();
-        public Task StopContainerAsync(string containerId, string? serverId = null) => throw new NotSupportedException();
-        public Task RestartContainerAsync(string containerId, string? serverId = null) => throw new NotSupportedException();
-        public Task RemoveContainerAsync(string containerId, bool force = false, string? serverId = null) => throw new NotSupportedException();
-        public Task<string> CreateContainerAsync(DeploymentRequest request, string? serverId = null) => throw new NotSupportedException();
-        public Task PullImageAsync(string imageName, IProgress<string>? progress = null, string? serverId = null) => throw new NotSupportedException();
-        public Task<(string State, int ExitCode, bool OomKilled)> InspectContainerStateAsync(string containerId, string? serverId = null) => throw new NotSupportedException();
-        public Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null) => throw new NotSupportedException();
-        public Task<Dictionary<string, ServerSystemInfo>> GetAllServerSystemInfoAsync() => throw new NotSupportedException();
-        public Task<string?> GetImageDigestAsync(string imageRef, string? serverId = null) => throw new NotSupportedException();
-        public Task<string> RecreateContainerAsync(string containerId, string? serverId = null, IProgress<string>? progress = null) => throw new NotSupportedException();
-        public Task<List<KeyValuePair<string, string>>> GetContainerEnvAsync(string containerId, string? serverId = null) => throw new NotSupportedException();
-        public Task<(string ImageId, string ConfigJson)> CaptureRollbackSnapshotAsync(string containerId, string? serverId = null) => throw new NotSupportedException();
-        public Task<string> RollbackContainerAsync(string containerName, string imageId, string configJson, string? serverId = null, IProgress<string>? progress = null) => throw new NotSupportedException();
-        public Task<IList<NetworkInfo>> ListNetworksAsync(string? serverId = null) => throw new NotSupportedException();
-        public Task<string> CreateNetworkAsync(string name, string driver = "bridge", string? serverId = null) => throw new NotSupportedException();
-        public Task RemoveNetworkAsync(string networkId, string? serverId = null) => throw new NotSupportedException();
-        public Task ConnectContainerToNetworkAsync(string networkId, string containerId, string? serverId = null) => throw new NotSupportedException();
-        public Task DisconnectContainerFromNetworkAsync(string networkId, string containerId, string? serverId = null) => throw new NotSupportedException();
-        public Task<(string Output, string Error, int ExitCode)> RunHostShellAsync(string command, string? serverId = null, TimeSpan? timeout = null) => throw new NotSupportedException();
-    }
 }

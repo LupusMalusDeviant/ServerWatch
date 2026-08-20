@@ -7,6 +7,8 @@ public class LogSearchResult
 {
     public string ContainerId { get; set; } = "";
     public string ContainerName { get; set; } = "";
+    public string ServerId { get; set; } = "";
+    public string ServerName { get; set; } = "";
     public string Line { get; set; } = "";
     public int LineNumber { get; set; }
 }
@@ -22,7 +24,9 @@ public class LogSearchService : ILogSearchService
         _logger = logger;
     }
 
-    /// <summary>Search logs of one or all containers for a pattern.</summary>
+    /// <summary>Search logs of one or all containers for a pattern. Without an explicit
+    /// <paramref name="serverId"/> this searches the WHOLE fleet — the container picker offers containers
+    /// from every server, so a default-server-only search silently returned nothing for the others.</summary>
     public async Task<List<LogSearchResult>> SearchAsync(string pattern, bool isRegex = false,
         string? containerId = null, string? serverId = null, int tailLines = 500, int maxResults = 200)
     {
@@ -35,7 +39,9 @@ public class LogSearchService : ILogSearchService
             catch { return results; }
         }
 
-        var containers = await _docker.ListContainersAsync(all: false, serverId: serverId);
+        var containers = serverId != null
+            ? await _docker.ListContainersAsync(all: false, serverId: serverId)
+            : await _docker.ListAllContainersAsync(all: false);
         var targets = containerId != null
             ? containers.Where(c => c.Id == containerId || c.Name == containerId).ToList()
             : containers.ToList();
@@ -46,7 +52,8 @@ public class LogSearchService : ILogSearchService
 
             try
             {
-                var logs = await _docker.GetContainerLogsAsync(container.Id, tailLines, serverId);
+                // Always fetch from the container's OWN server — with a fleet-wide list, `serverId` is null.
+                var logs = await _docker.GetContainerLogsAsync(container.Id, tailLines, container.ServerId);
                 var lines = logs.Split('\n');
 
                 for (int i = 0; i < lines.Length && results.Count < maxResults; i++)
@@ -62,6 +69,8 @@ public class LogSearchService : ILogSearchService
                         {
                             ContainerId = container.Id,
                             ContainerName = container.Name,
+                            ServerId = container.ServerId,
+                            ServerName = container.ServerName,
                             Line = line.Length > 500 ? line[..500] + "..." : line,
                             LineNumber = i + 1
                         });

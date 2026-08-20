@@ -86,6 +86,8 @@ public class MattermostNotificationService : IMattermostNotificationService
         "high_memory" => $":fire: **High Memory Load** | `{evt.ContainerName}`\n> {evt.ImageInfo}",
         "high_disk" => $":floppy_disk: **High Disk Usage** | `{evt.ContainerName}`\n> {evt.ImageInfo}",
         "metric_anomaly" => $":chart_with_upwards_trend: **Metric Anomaly** | `{evt.ContainerName}`\n> {evt.ImageInfo}",
+        "server_unreachable" => $":octagonal_sign: **Server Unreachable** | `{evt.ServerName}`\n> {evt.ImageInfo}",
+        "server_recovered" => $":white_check_mark: **Server Reachable Again** | `{evt.ServerName}`\n> {evt.ImageInfo}",
         _ when evt.EventType.StartsWith("log_alert", StringComparison.Ordinal) =>
             $":mag: **Log-Alert** | `{evt.ContainerName}`\n> {(string.IsNullOrWhiteSpace(evt.ImageInfo) ? evt.Image : evt.ImageInfo)}",
         // Fallback: still surface any detail text instead of dropping it.

@@ -6,22 +6,50 @@ All notable changes to Whiskers are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **A server that stops answering now raises an alert.** A host dropping off the fleet was silent: the
+  dashboard marked it unreachable, but nothing was sent — and every container alert and log-alert rule
+  covering that host quietly stopped producing anything, which looks exactly like "all quiet". The health
+  monitor now emits `server_unreachable` after two consecutive failed cycles
+  (`HealthMonitor:ServerUnreachableCycles`) and `server_recovered` when the host is back. Both are
+  rendered by every channel, link to `/servers`, and can drive an AI trigger.
+- **The alert history is finally written.** `AlertHistory` has existed since the first migration but
+  nothing ever wrote to it, so "what fired last week, and on which host?" was unanswerable. Every
+  delivered notification is now recorded with its server, container, type and message; a
+  `server_recovered` closes the outage rows it ends. Retention is the existing hourly prune.
+
 ### Fixed
 - **Log alerts only ever watched one server.** The monitor's scan listed containers without a server id,
   which returns the **default** server's containers only — so every "on all containers" rule silently
   covered a single host while the other five in a six-server fleet were never read. The scan now uses the
-  fleet-wide container list (the same one the container health monitor has always used) and fetches each
-  container's logs from its own server. Pulled along with it: log watermarks and rule cooldowns are keyed
-  by server + container id (container ids are unique per host only), hosts are scanned in parallel with a
-  bounded per-fetch timeout, and the alert's detail line now names the server, since container names
-  repeat across hosts.
+  fleet-wide container list and fetches each container's logs from its own server. Pulled along with it:
+  log watermarks and rule cooldowns are keyed by server + container id (container ids are unique per host
+  only), hosts are scanned in parallel with a bounded per-fetch timeout, and the alert names the server and
+  the line that matched.
 - **A rule filtered to one container fired on all of them.** "No filter" was decided on `ContainerId`
   alone, but the UI dialog and the `create_log_alert` MCP tool only ever set `ContainerName` — so every
   container-specific rule degraded into an all-containers rule. Both fields are now considered. (Masked
   until now by the single-server scan; with a fleet-wide scan it would have meant an alert storm.)
+- **An outage no longer swallows the log lines written during it.** An unreachable host returns an empty
+  container list, which the monitors treated as "these containers are gone" and dropped their state for —
+  re-baselining the host to "now" on recovery. Per-server state is now kept for hosts that did not answer,
+  so the outage window is still scanned and a container that really stopped is still reported.
+- **Log search searched one server too.** Without an explicit server it asked only the default host, while
+  the page's container picker lists containers from every server — picking a remote container returned "no
+  matches". Results now name the server they came from.
+- **Muting a container silenced only a third of its alerts.** The per-container notification preferences
+  were consulted by the health monitor alone; log alerts, CVE findings, image updates and metric alarms
+  ignored them. The check now runs centrally for every producer.
+- **Bounded log transfer.** With a `since` watermark the Docker call asked for *all* new lines, so one
+  chatty container could pull its whole burst over a remote connection every minute, per cycle,
+  fleet-wide. The tail limit (200 lines) now applies in both cases.
 - The self-log guard that keeps Whiskers from alerting on its own log lines now applies only to the host
   Whiskers runs on. A container that merely shares its name on a remote host is a different process and
   stays monitored.
+
+### Security
+- Matrix messages are built from an HTML-encoded copy of the event. The log-alert detail now carries the
+  matched log line — third-party text that must not reach an HTML body unescaped.
 
 ## [0.13.1] — 2026-07-24
 

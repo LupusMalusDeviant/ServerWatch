@@ -96,6 +96,12 @@ internal sealed class ContainerOperations
     }
 
     public async Task<IList<ContainerInfo>> ListAllContainersAsync(bool all = true)
+        => (await ListAllContainersDetailedAsync(all)).Containers.ToList();
+
+    /// <summary>One server's slice of a fleet-wide listing: its containers, or why it stayed silent.</summary>
+    private sealed record ServerListing(Models.ServerConfig Server, IList<ContainerInfo> Containers, FleetServerFailure? Failure);
+
+    public async Task<FleetContainerListing> ListAllContainersDetailedAsync(bool all = true)
     {
         // Kubernetes servers are not Docker hosts — their workloads come from the workload seam
         // (Services/Workloads), not from this Docker-only aggregation.
@@ -103,7 +109,8 @@ internal sealed class ContainerOperations
             .Where(s => s.ConnectionType != ConnectionType.Kubernetes).ToList();
         // Bound each server with a short timeout so ONE unreachable host can't blank the whole
         // dashboard: a slow/dead server is skipped after 8s (returns empty) while the reachable ones
-        // render immediately. Unreachability itself is surfaced separately via GetServerSystemInfoAsync.
+        // render immediately. WHICH servers failed is reported alongside the list, so callers that keep
+        // per-server state can tell "empty host" from "silent host".
         var perServerTimeout = TimeSpan.FromSeconds(8);
         var tasks = servers.Select(async server =>
         {
@@ -112,23 +119,31 @@ internal sealed class ContainerOperations
                 var listTask = ListContainersAsync(all, server.Id);
                 var winner = await Task.WhenAny(listTask, Task.Delay(perServerTimeout));
                 if (winner == listTask)
-                    return await listTask;
+                    return new ServerListing(server, await listTask, null);
 
                 // Timed out — observe any later fault so it isn't an unobserved exception, then degrade.
                 _ = listTask.ContinueWith(t => { _ = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
                 _logger.LogWarning("Listing containers for server {ServerName} timed out ({Timeout}s) — skipping (degraded view).",
                     server.Name, perServerTimeout.TotalSeconds);
-                return (IList<ContainerInfo>)new List<ContainerInfo>();
+                return new ServerListing(server, new List<ContainerInfo>(),
+                    new FleetServerFailure(server.Id, server.Name, $"Timed out after {perServerTimeout.TotalSeconds:0}s"));
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to list containers for server {ServerName}", server.Name);
-                return (IList<ContainerInfo>)new List<ContainerInfo>();
+                return new ServerListing(server, new List<ContainerInfo>(),
+                    new FleetServerFailure(server.Id, server.Name, ex.Message));
             }
         });
 
         var results = await Task.WhenAll(tasks);
-        return results.SelectMany(r => r).ToList();
+        return new FleetContainerListing
+        {
+            Containers = results.SelectMany(r => r.Containers).ToList(),
+            RespondedServerIds = results.Where(r => r.Failure == null)
+                .Select(r => r.Server.Id).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            FailedServers = results.Where(r => r.Failure != null).Select(r => r.Failure!).ToList()
+        };
     }
 
     public async Task<ContainerStats?> GetContainerStatsAsync(string containerId, string? serverId = null)
@@ -245,9 +260,11 @@ internal sealed class ContainerOperations
         {
             ShowStdout = true,
             ShowStderr = true,
-            // With a since-timestamp, return every line after it (log monitoring wants all new lines, not
-            // just the tail); otherwise keep the tail limit.
-            Tail = since.HasValue ? "all" : tailLines.ToString(),
+            // The tail limit applies in BOTH cases. Docker filters by `since` first and then keeps the last
+            // N of those, so the monitor still sees only new lines — but a container that dumps thousands of
+            // lines between two cycles can no longer pull its whole burst over a remote connection every
+            // minute (Tail="all" did exactly that, once per container per cycle, fleet-wide).
+            Tail = tailLines.ToString(),
             Since = since.HasValue
                 ? ((DateTimeOffset)DateTime.SpecifyKind(since.Value, DateTimeKind.Utc)).ToUnixTimeSeconds().ToString()
                 : null,

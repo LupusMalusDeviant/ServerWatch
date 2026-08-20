@@ -23,6 +23,8 @@ public static class NotificationFormatter
         "agent_approval" => ("Approval required", "Warning"),
         "auto_update_failed" => ("Auto-update failed", "Error"),
         "webhook_disabled" => ("Webhook disabled", "Warning"),
+        "server_unreachable" => ("Server unreachable", "Error"),
+        "server_recovered" => ("Server reachable again", "Info"),
         _ when e.EventType.StartsWith("log_alert", StringComparison.Ordinal) => ("Log alert / error in log", "Warning"),
         _ => (e.EventType, "Info"),
     };
@@ -34,6 +36,7 @@ public static class NotificationFormatter
             : string.Join(" · ", new[]
             {
                 string.IsNullOrWhiteSpace(e.ContainerName) ? null : e.ContainerName,
+                string.IsNullOrWhiteSpace(e.ServerName) ? null : $"@ {e.ServerName}",
                 string.IsNullOrWhiteSpace(e.Image) ? null : e.Image,
                 e.ExitCode is { } ec ? $"Exit {ec}" : null,
                 e.RestartCount is { } rc ? $"×{rc}" : null,
@@ -46,6 +49,7 @@ public static class NotificationFormatter
         if (e.EventType == "webhook_disabled") return "webhooks";
         if (e.EventType.StartsWith("agent_action", StringComparison.Ordinal)) return "agent-history";
         if (e.EventType == "cve_finding") return "cves";
+        if (e.EventType is "server_unreachable" or "server_recovered") return "servers";
         if (e.EventType.StartsWith("log_alert", StringComparison.Ordinal)) return "logs";
         if (e.EventType is "image_update" or "auto_update_failed"
                 or "unhealthy" or "oom_killed" or "stopped" or "restart_loop"

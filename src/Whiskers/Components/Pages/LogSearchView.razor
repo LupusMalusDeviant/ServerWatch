@@ -56,6 +56,8 @@
             <RowTemplate>
                 <MudTd>
                     <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@context.ContainerName</MudChip>
+                    @* The same container name can exist on several servers — say which host answered. *@
+                    <MudText Typo="Typo.caption" Class="ml-1 mud-text-secondary">@context.ServerName</MudText>
                 </MudTd>
                 <MudTd>
                     <code style="font-size: 0.8rem; word-break: break-all;">@context.Line</code>

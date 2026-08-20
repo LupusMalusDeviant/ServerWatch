@@ -50,6 +50,9 @@ public class DockerService : IDockerService
     public Task<IList<ContainerInfo>> ListAllContainersAsync(bool all = true)
         => _containers.ListAllContainersAsync(all);
 
+    public Task<FleetContainerListing> ListAllContainersDetailedAsync(bool all = true)
+        => _containers.ListAllContainersDetailedAsync(all);
+
     public Task<ContainerInfo?> GetContainerAsync(string id, string? serverId = null)
         => _containers.GetContainerAsync(id, serverId);
 

@@ -15,3 +15,27 @@ Deployment assets — the pieces used to install and run Whiskers, separate from
 The image and the release assets are produced by [`.github/workflows/release.yml`](../.github/workflows/release.yml) on every `v*` tag: multi-arch build (`linux/amd64`, `linux/arm64`), a **Trivy scan gate that runs before anything is published** (a CRITICAL fails the whole run), push to GHCR (`latest`, `X.Y.Z`, `X.Y`), then a GitHub Release with an SBOM, checksums, and image-pinned `docker-compose.yml` / `docker-compose.hardened.yml` / `install.sh` attached.
 
 See the [README quick start](../README.md#quick-start) for the user-facing install paths and [`docs/roadmap/outOfTheBox.md`](../docs/roadmap/outOfTheBox.md) (W2) for the design.
+
+## `tailnet-guard.sh` — for hosts that reach their fleet over Tailscale
+
+Optional host-level guard for the deployment host. A `docker compose up --build` produces a burst of veth
+link changes; on 2026-08-20 that stripped `tailscale0`'s addresses on a deploy host, and tailscaled did not
+restore them — `tailscale ping` still answered (userspace disco) while every TCP connection to the tailnet
+timed out via the default route. Whiskers reported "success" for the deploy while five of six servers had
+silently become unreachable.
+
+The script verifies the data path end-to-end (an address on `tailscale0` **and** a TCP connect to a
+configured peer's Docker port) and restarts `tailscaled` once if it is broken. Install it as root and wire
+it in two places:
+
+```bash
+install -m 0755 deploy/tailnet-guard.sh /usr/local/sbin/tailnet-guard
+/usr/local/sbin/tailnet-guard --check-only     # report only, never acts
+```
+
+- at the end of your deploy script, after `docker compose up`, so a deploy can never leave the fleet cut off
+- as a systemd timer (5 min) for the churn that happens outside deploys
+
+Complementary hardening for hosts running `systemd-networkd`: mark the tun unmanaged
+(`[Match] Name=tailscale0` + `[Link] Unmanaged=yes`) and set `ManageForeignRoutes=no` /
+`ManageForeignRoutingPolicyRules=no`.

@@ -81,7 +81,34 @@ public class MatrixNotificationService : IMatrixNotificationService
         response.EnsureSuccessStatusCode();
     }
 
-    private static (string Plain, string Html) FormatMessage(NotificationEvent evt) => evt.EventType switch
+    /// <summary>Matrix renders <c>formatted_body</c> as HTML, so every value interpolated into it has to be
+    /// encoded first: container names, image refs, rule names and — since the log-alert detail carries them —
+    /// raw log lines are all third-party text. Rather than escaping at a dozen interpolation sites, the HTML
+    /// variant is built from an escaped copy of the event; the plain-text body uses the original.</summary>
+    /// <remarks>Public so the escaping can be tested without a homeserver.</remarks>
+    public static (string Plain, string Html) FormatMessage(NotificationEvent evt)
+        => (FormatParts(evt).Plain, FormatParts(HtmlEscaped(evt)).Html);
+
+    private static NotificationEvent HtmlEscaped(NotificationEvent e) => new()
+    {
+        ContainerId = Enc(e.ContainerId),
+        ContainerName = Enc(e.ContainerName),
+        Image = Enc(e.Image),
+        ImageName = Enc(e.ImageName),
+        ImageInfo = Enc(e.ImageInfo),
+        EventType = Enc(e.EventType),
+        ServerId = e.ServerId,
+        ServerName = Enc(e.ServerName),
+        ExitCode = e.ExitCode,
+        RestartCount = e.RestartCount,
+        WindowMinutes = e.WindowMinutes,
+        CorrelationId = e.CorrelationId,
+        Timestamp = e.Timestamp
+    };
+
+    private static string Enc(string? value) => System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
+
+    private static (string Plain, string Html) FormatParts(NotificationEvent evt) => evt.EventType switch
     {
         "unhealthy" => (
             $"⚠️ Container Unhealthy | {evt.ContainerName} health check is failing. Image: {evt.Image}",
@@ -126,6 +153,14 @@ public class MatrixNotificationService : IMatrixNotificationService
         "metric_anomaly" => (
             $"📈 Metric Anomaly | {evt.ContainerName}. {evt.ImageInfo}",
             $"📈 <strong>Metric Anomaly</strong> | <code>{evt.ContainerName}</code><br/>{evt.ImageInfo}"
+        ),
+        "server_unreachable" => (
+            $"🛑 Server Unreachable | {evt.ServerName}. {evt.ImageInfo}",
+            $"🛑 <strong>Server Unreachable</strong> | <code>{evt.ServerName}</code><br/>{evt.ImageInfo}"
+        ),
+        "server_recovered" => (
+            $"✅ Server Reachable Again | {evt.ServerName}. {evt.ImageInfo}",
+            $"✅ <strong>Server Reachable Again</strong> | <code>{evt.ServerName}</code><br/>{evt.ImageInfo}"
         ),
         _ when evt.EventType.StartsWith("log_alert", StringComparison.Ordinal) => (
             $"🔍 Log-Alert | {evt.ContainerName}. {(string.IsNullOrWhiteSpace(evt.ImageInfo) ? evt.Image : evt.ImageInfo)}",

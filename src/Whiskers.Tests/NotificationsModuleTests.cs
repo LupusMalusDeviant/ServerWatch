@@ -57,6 +57,15 @@ public class NotificationsModuleTests
         return services.BuildServiceProvider();
     }
 
+    /// <summary>Prefs that never mute — the mute path itself is covered by NotificationPipelineTests.</summary>
+    private sealed class AllowAllPrefs : IContainerNotificationPrefsService
+    {
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public ContainerNotifEntry GetPrefs(string containerName) => new();
+        public bool ShouldNotify(string containerName, string eventType) => true;
+        public Task SavePrefsAsync(string containerName, ContainerNotifEntry entry) => Task.CompletedTask;
+    }
+
     // --- Composite fan-out (changeme C9) -----------------------------------------------------------------
 
     [Fact]
@@ -66,7 +75,7 @@ public class NotificationsModuleTests
         var inApp = new CountingInApp();
         var dispatcher = new RecordingDispatcher();
         var composite = new CompositeNotificationService(
-            channels, inApp, SpWith(dispatcher), NullLogger<CompositeNotificationService>.Instance);
+            channels, inApp, new AllowAllPrefs(), SpWith(dispatcher), NullLogger<CompositeNotificationService>.Instance);
 
         await composite.SendAsync(new NotificationEvent { EventType = "container_down" });
 
@@ -80,7 +89,7 @@ public class NotificationsModuleTests
     {
         var channels = new[] { new FakeChannel("A"), new FakeChannel("B") };
         var composite = new CompositeNotificationService(
-            channels, new CountingInApp(), SpWith(new RecordingDispatcher()), NullLogger<CompositeNotificationService>.Instance);
+            channels, new CountingInApp(), new AllowAllPrefs(), SpWith(new RecordingDispatcher()), NullLogger<CompositeNotificationService>.Instance);
 
         await composite.SendTestAsync();
 
@@ -89,8 +98,9 @@ public class NotificationsModuleTests
 
     // --- Enable/disable gate (boot-gate) -----------------------------------------------------------------
 
-    // Mirrors the Core notification registrations from Program.cs: the Noop default plus the two services the
-    // module deliberately leaves in Core (in-app feed store + AI-trigger dispatcher), here as light fakes.
+    // Mirrors the Core notification registrations from Program.cs: the Noop default plus the services the
+    // module deliberately leaves in Core (in-app feed store, AI-trigger dispatcher, per-container prefs —
+    // the composite consults the prefs for every event), here as light fakes.
     private static ServiceCollection CoreNotificationDeps()
     {
         var services = new ServiceCollection();
@@ -98,6 +108,7 @@ public class NotificationsModuleTests
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddSingleton<IInAppNotificationStore, CountingInApp>();
         services.AddSingleton<IAiTriggerDispatcher, RecordingDispatcher>();
+        services.AddSingleton<IContainerNotificationPrefsService, AllowAllPrefs>();
         // Registered BEFORE the module (like Program.cs registers it before the module loop).
         services.AddSingleton<INotificationService, NoopNotificationService>();
         return services;

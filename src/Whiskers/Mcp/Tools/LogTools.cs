@@ -10,7 +10,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class LogTools
 {
-    [McpServerTool, Description("Search container logs for a pattern (text or regex). Returns matching lines across one or all containers.")]
+    [McpServerTool, Description("Search container logs for a pattern (text or regex). Searches every server unless a serverId is given. Returns matching lines across one or all containers.")]
     public static async Task<string> SearchLogs(
         IHttpContextAccessor httpContextAccessor,
         IMcpPermissionService permissionService,
@@ -18,7 +18,7 @@ public class LogTools
         [Description("Search pattern (text or regex)")] string pattern,
         [Description("Use regex matching (default: false)")] bool isRegex = false,
         [Description("Container name to search (optional, omit for all)")] string? containerId = null,
-        [Description("Server ID (optional, defaults to local)")] string? serverId = null,
+        [Description("Server ID (optional, omit to search all servers)")] string? serverId = null,
         [Description("Number of log tail lines to search per container (default: 500)")] int tailLines = 500)
     {
         var denied = McpPermissionCheck.CheckAccess(httpContextAccessor, permissionService, "search_logs");
@@ -27,11 +27,12 @@ public class LogTools
         var results = await searchService.SearchAsync(pattern, isRegex, containerId, serverId, tailLines);
         if (!results.Any()) return $"No matches found for '{pattern}'.";
 
-        var lines = results.Select(r => $"[{r.ContainerName}:{r.LineNumber}] {r.Line}");
+        // Name the server: container names repeat across hosts, so the bare name is ambiguous.
+        var lines = results.Select(r => $"[{r.ServerName}/{r.ContainerName}:{r.LineNumber}] {r.Line}");
         return $"Found {results.Count} matches:\n{string.Join('\n', lines)}";
     }
 
-    [McpServerTool, Description("Create a log alert rule that triggers notifications when a pattern is found in container logs.")]
+    [McpServerTool, Description("Create a log alert rule that triggers notifications when a pattern is found in container logs. Rules are evaluated on every configured server.")]
     public static async Task<string> CreateLogAlert(
         IHttpContextAccessor httpContextAccessor,
         IMcpPermissionService permissionService,
@@ -39,7 +40,7 @@ public class LogTools
         [Description("Rule name")] string name,
         [Description("Pattern to match (text or regex)")] string pattern,
         [Description("Use regex matching (default: false)")] bool isRegex = false,
-        [Description("Container name (optional, omit for all containers)")] string? containerName = null,
+        [Description("Container name (optional, omit for all containers). A name matches that container on EVERY server.")] string? containerName = null,
         [Description("Severity: info, warning, error, critical")] string severity = "error",
         [Description("Cooldown in minutes between alerts")] int cooldownMinutes = 10)
     {

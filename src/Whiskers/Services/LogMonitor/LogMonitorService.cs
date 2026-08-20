@@ -34,7 +34,9 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     // but an unbounded fetch would still hold its own chain — and with it the start of the next cycle.
     private static readonly TimeSpan LogFetchTimeout = TimeSpan.FromSeconds(15);
 
-    private const int TailLines = 50;
+    // Lines fetched per container per cycle. Since the Docker call now caps the transfer even with a
+    // `since` filter, this is the real ceiling on how much of a burst we can still match in one cycle.
+    private const int TailLines = 200;
 
     // Our own container must never be scanned for log alerts. Whiskers logs its own
     // "Log alert triggered: … {matchedLine}" and "Trivy scan failed … FATAL" lines; when an
@@ -104,8 +106,10 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         }
 
         // The fleet-wide list: ListContainersAsync() without a server id only ever returns the DEFAULT
-        // server's containers, which silently limited every "all containers" rule to one host.
-        var containers = await _docker.ListAllContainersAsync(all: false);
+        // server's containers, which silently limited every "all containers" rule to one host. The
+        // detailed variant also reports which hosts answered — needed for the pruning below.
+        var listing = await _docker.ListAllContainersDetailedAsync(all: false);
+        var containers = listing.Containers;
         var selfServerIds = ResolveSelfServerIds();
         var hits = new ConcurrentQueue<LogAlertHit>();
 
@@ -127,10 +131,14 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
                 ContainerId = hit.Container.Id,
                 ContainerName = hit.Container.Name,
                 Image = hit.Container.Image,
+                ServerId = hit.Container.ServerId,
+                ServerName = hit.Container.ServerName,
                 EventType = $"log_alert:{hit.Rule.Severity}",
-                // The detail line every channel renders (NotificationFormatter.Detail). Names them the
-                // server too: container names repeat across hosts, so "postgres" alone is ambiguous now.
-                ImageInfo = $"{hit.Rule.Name} · {hit.Container.Name} @ {hit.Container.ServerName}",
+                // The detail line every channel renders (NotificationFormatter.Detail): which rule fired,
+                // on which host (container names repeat across a fleet) and the line that matched. The
+                // matched line is third-party text — the Matrix HTML body escapes it (MatrixNotification-
+                // Service.HtmlEscaped), the other channels are plain text.
+                ImageInfo = $"{hit.Rule.Name} · {hit.Container.Name} @ {hit.Container.ServerName} — {hit.MatchedLine}",
                 // Abuse RestartCount field for trigger count
                 RestartCount = hit.Rule.TriggerCount
             });
@@ -141,15 +149,20 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
 
         if (!hits.IsEmpty) await db.SaveChangesAsync(ct);
 
-        // Bound the per-container maps: drop entries for containers no longer in the list.
+        // Bound the per-container maps: drop entries for containers no longer in the list — but ONLY for
+        // servers that actually answered. An unreachable host contributes an empty list; dropping its
+        // watermarks would re-baseline it to "now" on recovery, so every line written during the outage
+        // would be silently skipped.
         var liveKeys = containers.Select(CompositeKey).ToHashSet();
         foreach (var kv in _cooldowns.ToArray())
         {
             var parts = kv.Key.Split(':', 2); // "ruleId:serverId:containerId"
-            if (parts.Length == 2 && !liveKeys.Contains(parts[1])) _cooldowns.TryRemove(kv.Key, out _);
+            if (parts.Length == 2 && !liveKeys.Contains(parts[1]) && listing.MayPruneStateFor(ServerOfKey(parts[1])))
+                _cooldowns.TryRemove(kv.Key, out _);
         }
         foreach (var key in _lastLogCheck.Keys)
-            if (!liveKeys.Contains(key)) _lastLogCheck.TryRemove(key, out _);
+            if (!liveKeys.Contains(key) && listing.MayPruneStateFor(ServerOfKey(key)))
+                _lastLogCheck.TryRemove(key, out _);
     }
 
     /// <summary>Scans one server's containers sequentially and records the matches; the caller applies
@@ -248,6 +261,9 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     /// <summary>Identifies a container across the fleet. Container ids are unique per host only, so every
     /// per-container map has to be keyed by server + id (same scheme as ContainerHealthMonitor).</summary>
     public static string CompositeKey(ContainerInfo container) => $"{container.ServerId}:{container.Id}";
+
+    /// <summary>The server part of a <see cref="CompositeKey"/>.</summary>
+    public static string ServerOfKey(string compositeKey) => compositeKey.Split(':', 2)[0];
 
     /// <summary>A rule applies to a container when it carries no filter at all ("all containers"), or when
     /// its filter matches by id or by name.
