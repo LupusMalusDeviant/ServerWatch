@@ -175,6 +175,8 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         ConcurrentQueue<LogAlertHit> hits,
         CancellationToken ct)
     {
+        int scanned = 0, noRules = 0, failed = 0;
+
         foreach (var container in containers)
         {
             if (ct.IsCancellationRequested) break;
@@ -183,7 +185,8 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
             if (IsSelfContainer(container, selfServerIds)) continue;
 
             var applicableRules = rules.Where(r => RuleApplies(r, container)).ToList();
-            if (applicableRules.Count == 0) continue;
+            if (applicableRules.Count == 0) { noRules++; continue; }
+            scanned++;
 
             var key = CompositeKey(container);
 
@@ -199,6 +202,12 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
                 var logs = await FetchLogsAsync(container, since);
                 _lastLogCheck[key] = fetchedAt;
                 var lines = logs.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+                // Per-container trace of what the scan actually saw. Without it, "no alert" cannot be told
+                // apart from "not scanned", "nothing new" or "read failed" — a bad place to be for the
+                // component whose whole job is noticing things.
+                _logger.LogDebug("Scanned {Container} on {Server}: {Lines} new line(s) since {Since:HH:mm:ss}, {Rules} rule(s)",
+                    container.Name, container.ServerName, lines.Length, since, applicableRules.Count);
 
                 foreach (var rule in applicableRules)
                 {
@@ -235,9 +244,13 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
             catch (Exception ex)
             {
                 // No watermark update on failure — the next cycle retries the same window.
+                failed++;
                 _logger.LogDebug(ex, "Failed to check logs for {Container} on {Server}", container.Name, container.ServerName);
             }
         }
+
+        _logger.LogDebug("Scan of {Server} done: {Scanned} scanned, {NoRules} without a matching rule, {Failed} failed, of {Total}",
+            containers.FirstOrDefault()?.ServerName ?? "?", scanned, noRules, failed, containers.Count);
     }
 
     /// <summary>Fetches a container's new log lines, bounded by <see cref="LogFetchTimeout"/>: the Docker
