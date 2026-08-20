@@ -4,6 +4,25 @@ All notable changes to Whiskers are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer
 (0.x = pre-1.0, minor bumps may contain breaking changes — noted explicitly).
 
+## [Unreleased]
+
+### Fixed
+- **Log alerts only ever watched one server.** The monitor's scan listed containers without a server id,
+  which returns the **default** server's containers only — so every "on all containers" rule silently
+  covered a single host while the other five in a six-server fleet were never read. The scan now uses the
+  fleet-wide container list (the same one the container health monitor has always used) and fetches each
+  container's logs from its own server. Pulled along with it: log watermarks and rule cooldowns are keyed
+  by server + container id (container ids are unique per host only), hosts are scanned in parallel with a
+  bounded per-fetch timeout, and the alert's detail line now names the server, since container names
+  repeat across hosts.
+- **A rule filtered to one container fired on all of them.** "No filter" was decided on `ContainerId`
+  alone, but the UI dialog and the `create_log_alert` MCP tool only ever set `ContainerName` — so every
+  container-specific rule degraded into an all-containers rule. Both fields are now considered. (Masked
+  until now by the single-server scan; with a fleet-wide scan it would have meant an alert storm.)
+- The self-log guard that keeps Whiskers from alerting on its own log lines now applies only to the host
+  Whiskers runs on. A container that merely shares its name on a remote host is a different process and
+  stays monitored.
+
 ## [0.13.1] — 2026-07-24
 
 ### Fixed

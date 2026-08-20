@@ -5,7 +5,10 @@ public class LogAlertRuleEntity
     public long Id { get; set; }
     public string RuleId { get; set; } = Guid.NewGuid().ToString("N")[..12];
     public string Name { get; set; } = "";
-    public string? ContainerId { get; set; }    // null = alle Container
+    // Container filter: BOTH null = all containers. The UI dialog and the MCP tool only ever set
+    // ContainerName (by design — a name outlives a recreated container), so neither field alone can
+    // stand for "no filter" — see LogMonitorService.RuleApplies.
+    public string? ContainerId { get; set; }
     public string? ContainerName { get; set; }
     public string Pattern { get; set; } = "";    // Regex oder Plaintext
     public bool IsRegex { get; set; }

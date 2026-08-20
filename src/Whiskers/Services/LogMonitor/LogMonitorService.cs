@@ -5,24 +5,36 @@ using Whiskers.Models;
 using Whiskers.Services.Docker;
 using Whiskers.Services.Notifications;
 using Whiskers.Services.Persistence;
+using Whiskers.Services.ServerConfig;
 
 namespace Whiskers.Services.LogMonitor;
 
 /// <summary>
 /// Background service that periodically checks container logs against alert rules.
+/// Scans EVERY configured Docker server, not just the default one — a rule without a container filter
+/// means "all containers of the fleet", the same scope <see cref="HealthMonitor.ContainerHealthMonitor"/>
+/// has always used.
 /// </summary>
 public class LogMonitorService : BackgroundService, ILogMonitorService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDockerService _docker;
+    private readonly IServerConfigService _serverConfig;
     private readonly INotificationService _notifications;
     private readonly ILogger<LogMonitorService> _logger;
     private readonly ConcurrentDictionary<string, DateTime> _cooldowns = new();
     // Per-container timestamp of the last log check, so we fetch only NEW lines and an old ERROR line
-    // doesn't re-alert every cycle.
+    // doesn't re-alert every cycle. Keyed by "{serverId}:{containerId}" (see CompositeKey): container ids
+    // are only unique per host, so a fleet-wide scan must not let two hosts share one entry.
     private readonly ConcurrentDictionary<string, DateTime> _lastLogCheck = new();
 
     private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(60);
+
+    // A single wedged Docker connection must not stall the cycle forever: hosts are scanned in parallel,
+    // but an unbounded fetch would still hold its own chain — and with it the start of the next cycle.
+    private static readonly TimeSpan LogFetchTimeout = TimeSpan.FromSeconds(15);
+
+    private const int TailLines = 50;
 
     // Our own container must never be scanned for log alerts. Whiskers logs its own
     // "Log alert triggered: … {matchedLine}" and "Trivy scan failed … FATAL" lines; when an
@@ -38,11 +50,13 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     public LogMonitorService(
         IServiceScopeFactory scopeFactory,
         IDockerService docker,
+        IServerConfigService serverConfig,
         INotificationService notifications,
         ILogger<LogMonitorService> logger)
     {
         _scopeFactory = scopeFactory;
         _docker = docker;
+        _serverConfig = serverConfig;
         _notifications = notifications;
         _logger = logger;
     }
@@ -58,7 +72,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
             {
                 // WaitAsync bounds the cycle to shutdown: per-container log fetches carry no token, so
                 // abandon an in-flight cycle on stop rather than block the host's shutdown window.
-                await CheckLogsAsync(stoppingToken).WaitAsync(stoppingToken);
+                await RunScanCycleAsync(stoppingToken).WaitAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -69,13 +83,15 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         }
     }
 
-    private async Task CheckLogsAsync(CancellationToken ct)
+    /// <summary>Runs one scan cycle over the whole fleet. Public so a test can drive a single cycle
+    /// without the hosted-service loop (same test seam idea as ContainerHealthMonitor.IsRestart).</summary>
+    public async Task RunScanCycleAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MetricsDbContext>();
 
         var rules = await db.LogAlertRules.Where(r => r.Enabled).ToListAsync(ct);
-        if (!rules.Any()) return;
+        if (rules.Count == 0) return;
 
         // Compile the regex rules once per cycle (keyed by pattern) instead of re-parsing each pattern
         // for every log line of every container. Invalid patterns are dropped here with a warning.
@@ -87,39 +103,100 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
             catch (ArgumentException ex) { _logger.LogWarning(ex, "Invalid log-alert regex '{Pattern}' — skipped", r.Pattern); }
         }
 
-        var containers = await _docker.ListContainersAsync(all: false);
+        // The fleet-wide list: ListContainersAsync() without a server id only ever returns the DEFAULT
+        // server's containers, which silently limited every "all containers" rule to one host.
+        var containers = await _docker.ListAllContainersAsync(all: false);
+        var selfServerIds = ResolveSelfServerIds();
+        var hits = new ConcurrentQueue<LogAlertHit>();
 
+        // One chain per server: hosts in parallel so remote latency doesn't add up over the fleet, the
+        // containers of a host sequentially so we don't fan a burst of log requests at one connection.
+        await Task.WhenAll(containers
+            .GroupBy(c => c.ServerId, StringComparer.OrdinalIgnoreCase)
+            .Select(g => ScanServerAsync(g.ToList(), rules, compiledRegexes, selfServerIds, hits, ct)));
+
+        // Rule bookkeeping and notifications happen back here, on the cycle's own thread: MetricsDbContext
+        // is not thread-safe, and the notification order shouldn't depend on which host answered first.
+        foreach (var hit in hits)
+        {
+            hit.Rule.LastTriggered = DateTime.UtcNow;
+            hit.Rule.TriggerCount++;
+
+            await _notifications.SendAsync(new NotificationEvent
+            {
+                ContainerId = hit.Container.Id,
+                ContainerName = hit.Container.Name,
+                Image = hit.Container.Image,
+                EventType = $"log_alert:{hit.Rule.Severity}",
+                // The detail line every channel renders (NotificationFormatter.Detail). Names them the
+                // server too: container names repeat across hosts, so "postgres" alone is ambiguous now.
+                ImageInfo = $"{hit.Rule.Name} · {hit.Container.Name} @ {hit.Container.ServerName}",
+                // Abuse RestartCount field for trigger count
+                RestartCount = hit.Rule.TriggerCount
+            });
+
+            _logger.LogWarning("Log alert triggered: {RuleName} on {Container} ({Server}) — {Line}",
+                hit.Rule.Name, hit.Container.Name, hit.Container.ServerName, hit.MatchedLine);
+        }
+
+        if (!hits.IsEmpty) await db.SaveChangesAsync(ct);
+
+        // Bound the per-container maps: drop entries for containers no longer in the list.
+        var liveKeys = containers.Select(CompositeKey).ToHashSet();
+        foreach (var kv in _cooldowns.ToArray())
+        {
+            var parts = kv.Key.Split(':', 2); // "ruleId:serverId:containerId"
+            if (parts.Length == 2 && !liveKeys.Contains(parts[1])) _cooldowns.TryRemove(kv.Key, out _);
+        }
+        foreach (var key in _lastLogCheck.Keys)
+            if (!liveKeys.Contains(key)) _lastLogCheck.TryRemove(key, out _);
+    }
+
+    /// <summary>Scans one server's containers sequentially and records the matches; the caller applies
+    /// them to the database.</summary>
+    private async Task ScanServerAsync(
+        IReadOnlyList<ContainerInfo> containers,
+        IReadOnlyList<LogAlertRuleEntity> rules,
+        IReadOnlyDictionary<string, Regex> compiledRegexes,
+        IReadOnlySet<string> selfServerIds,
+        ConcurrentQueue<LogAlertHit> hits,
+        CancellationToken ct)
+    {
         foreach (var container in containers)
         {
             if (ct.IsCancellationRequested) break;
 
             // Never scan our own logs — breaks the self-amplifying alert feedback loop.
-            if (SelfContainerNames.Contains(container.Name)) continue;
+            if (IsSelfContainer(container, selfServerIds)) continue;
 
-            var applicableRules = rules.Where(r =>
-                r.ContainerId == null || r.ContainerId == container.Id || r.ContainerName == container.Name).ToList();
+            var applicableRules = rules.Where(r => RuleApplies(r, container)).ToList();
+            if (applicableRules.Count == 0) continue;
 
-            if (!applicableRules.Any()) continue;
+            var key = CompositeKey(container);
 
             try
             {
                 // Fetch only lines since our last check so an old ERROR line doesn't re-alert every cycle;
-                // on first sight, baseline to now so historical logs aren't alerted.
-                var since = _lastLogCheck.TryGetValue(container.Id, out var last) ? last : DateTime.UtcNow;
-                var logs = await _docker.GetContainerLogsAsync(container.Id, 50, since: since);
-                _lastLogCheck[container.Id] = DateTime.UtcNow;
+                // on first sight, baseline to now so historical logs aren't alerted. The watermark is taken
+                // BEFORE the fetch: with remote hosts the round trip is long enough that lines written
+                // during it would otherwise fall into neither window. A line seen twice at the window edge
+                // is caught by the rule cooldown; a line lost is lost for good.
+                var fetchedAt = DateTime.UtcNow;
+                var since = _lastLogCheck.TryGetValue(key, out var last) ? last : fetchedAt;
+                var logs = await FetchLogsAsync(container, since);
+                _lastLogCheck[key] = fetchedAt;
                 var lines = logs.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
                 foreach (var rule in applicableRules)
                 {
-                    // Cooldown check
-                    var cooldownKey = $"{rule.RuleId}:{container.Id}";
+                    // Cooldown check — per rule AND per container, and the container is only identified by
+                    // server + id: two hosts running a same-named container must not share one cooldown.
+                    var cooldownKey = $"{rule.RuleId}:{key}";
                     if (_cooldowns.TryGetValue(cooldownKey, out var lastTriggered) &&
                         DateTime.UtcNow - lastTriggered < TimeSpan.FromMinutes(rule.CooldownMinutes))
                         continue;
 
                     // Pattern match
-                    bool matched = false;
                     string? matchedLine = null;
 
                     foreach (var line in lines)
@@ -130,56 +207,89 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
 
                         if (hit)
                         {
-                            matched = true;
                             matchedLine = line.Length > 200 ? line[..200] : line;
                             break;
                         }
                     }
 
-                    if (matched)
+                    if (matchedLine != null)
                     {
                         _cooldowns[cooldownKey] = DateTime.UtcNow;
-
-                        // Update rule stats
-                        rule.LastTriggered = DateTime.UtcNow;
-                        rule.TriggerCount++;
-
-                        // Send notification
-                        var evt = new NotificationEvent
-                        {
-                            ContainerId = container.Id,
-                            ContainerName = container.Name,
-                            Image = container.Image,
-                            EventType = $"log_alert:{rule.Severity}",
-                            // Abuse RestartCount field for trigger count
-                            RestartCount = rule.TriggerCount
-                        };
-
-                        await _notifications.SendAsync(evt);
-
-                        _logger.LogWarning("Log alert triggered: {RuleName} on {Container} — {Line}",
-                            rule.Name, container.Name, matchedLine);
+                        hits.Enqueue(new LogAlertHit(rule, container, matchedLine));
                     }
                 }
-
-                await db.SaveChangesAsync(ct);
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Failed to check logs for {Container}", container.Name);
+                // No watermark update on failure — the next cycle retries the same window.
+                _logger.LogDebug(ex, "Failed to check logs for {Container} on {Server}", container.Name, container.ServerName);
             }
         }
-
-        // Bound the per-container maps: drop entries for containers no longer in the list.
-        var liveIds = containers.Select(c => c.Id).ToHashSet();
-        foreach (var kv in _cooldowns.ToArray())
-        {
-            var parts = kv.Key.Split(':', 2); // "ruleId:containerId"
-            if (parts.Length == 2 && !liveIds.Contains(parts[1])) _cooldowns.TryRemove(kv.Key, out _);
-        }
-        foreach (var id in _lastLogCheck.Keys)
-            if (!liveIds.Contains(id)) _lastLogCheck.TryRemove(id, out _);
     }
+
+    /// <summary>Fetches a container's new log lines, bounded by <see cref="LogFetchTimeout"/>: the Docker
+    /// log call carries no cancellation token, so a dead connection would otherwise hang this server's
+    /// chain indefinitely.</summary>
+    private async Task<string> FetchLogsAsync(ContainerInfo container, DateTime since)
+    {
+        var fetch = _docker.GetContainerLogsAsync(container.Id, TailLines, container.ServerId, since);
+        if (await Task.WhenAny(fetch, Task.Delay(LogFetchTimeout)) != fetch)
+        {
+            // Observe a later fault so it isn't an unobserved exception, then degrade.
+            _ = fetch.ContinueWith(t => { _ = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+            _logger.LogWarning("Fetching logs for {Container} on {Server} timed out after {Timeout}s — skipped this cycle",
+                container.Name, container.ServerName, LogFetchTimeout.TotalSeconds);
+            throw new TimeoutException($"Log fetch for {container.Name} on {container.ServerName} timed out.");
+        }
+
+        return await fetch;
+    }
+
+    /// <summary>Identifies a container across the fleet. Container ids are unique per host only, so every
+    /// per-container map has to be keyed by server + id (same scheme as ContainerHealthMonitor).</summary>
+    public static string CompositeKey(ContainerInfo container) => $"{container.ServerId}:{container.Id}";
+
+    /// <summary>A rule applies to a container when it carries no filter at all ("all containers"), or when
+    /// its filter matches by id or by name.
+    /// <para>A NAME-only filter is the normal case — both the UI dialog and the MCP tool set ContainerName
+    /// and leave ContainerId null — so the "no filter" test has to look at BOTH fields. Testing ContainerId
+    /// alone (as this did) short-circuited every name-filtered rule into an all-containers rule; harmless
+    /// while the scan saw one host, an alert storm once it sees the whole fleet.</para>
+    /// <para>A name filter deliberately matches on EVERY server: the UI picker lists the containers of all
+    /// servers but stores only the name, so a name rule means "this workload, wherever it runs". Pinning a
+    /// rule to one server would need a new column on LogAlertRuleEntity.</para></summary>
+    public static bool RuleApplies(LogAlertRuleEntity rule, ContainerInfo container) =>
+        (rule.ContainerId == null && rule.ContainerName == null)
+        || rule.ContainerId == container.Id
+        || rule.ContainerName == container.Name;
+
+    /// <summary>The self-log guard, restricted to the host we ourselves run on. A container that merely
+    /// shares our name on a REMOTE host is a different process and must stay monitored.</summary>
+    public static bool IsSelfContainer(ContainerInfo container, IReadOnlySet<string> selfServerIds) =>
+        selfServerIds.Contains(container.ServerId) && SelfContainerNames.Contains(container.Name);
+
+    /// <summary>The server(s) whose containers can be our OWN container: Whiskers reaches its own host
+    /// through the <see cref="ConnectionType.Local"/> entry. If the fleet has no local server (an all-mTLS
+    /// or Kubernetes setup, where our own container may not be visible at all), fall back to the default
+    /// server — that is exactly the host the old single-server scan used to look at.</summary>
+    public static IReadOnlySet<string> ResolveSelfServerIds(IServerConfigService serverConfig)
+    {
+        var ids = serverConfig.GetServers()
+            .Where(s => s.ConnectionType == ConnectionType.Local)
+            .Select(s => s.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (ids.Count == 0 && serverConfig.GetDefaultServer() is { } fallback)
+            ids.Add(fallback.Id);
+
+        return ids;
+    }
+
+    private IReadOnlySet<string> ResolveSelfServerIds() => ResolveSelfServerIds(_serverConfig);
+
+    /// <summary>A pattern match found while scanning; applied to the rule stats and notifications
+    /// afterwards, off the parallel scan.</summary>
+    private sealed record LogAlertHit(LogAlertRuleEntity Rule, ContainerInfo Container, string? MatchedLine);
 
     // === Public API ===
 

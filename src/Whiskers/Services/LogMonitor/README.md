@@ -10,6 +10,25 @@ Log search and **pattern-based log alerts**. Search container logs on demand, an
 | `ILogMonitorService.cs` / `LogMonitorService.cs` | Background log-pattern monitor; manages the alert rules and raises notifications on matches. |
 | `NoopLogMonitorService.cs` | Core default `ILogMonitorService` (no rules, no monitor). Registered before the module loop so the AI-triggers page still resolves it when the **LogMonitor module** is off; the real `LogMonitorService` wins by last-registration when on (RoadToSAP Phase 1). |
 
+## Scan scope
+
+The monitor scans **every enabled Docker server**, not just the default one (`ListAllContainersAsync`, the
+same fleet-wide list `ContainerHealthMonitor` uses). Consequences worth knowing:
+
+- Hosts are scanned in parallel, the containers of one host sequentially; each log fetch is bounded by a
+  15 s timeout so one wedged connection can't stall the cycle.
+- Watermarks (`_lastLogCheck`) and cooldowns are keyed by `{serverId}:{containerId}` — container ids are
+  unique per host only.
+- A rule counts as "all containers" only when **both** `ContainerId` and `ContainerName` are null. A
+  name-only filter (what the UI dialog and `create_log_alert` produce) matches that name on **every**
+  server; there is no per-server rule scope yet — that would need a new column on `LogAlertRuleEntity`.
+- The self-log guard (`SERVERWATCH_SELF_CONTAINERS`, default `serverwatch`) only applies to the server
+  Whiskers itself runs on (`ConnectionType.Local`, else the default server) — a namesake on a remote host
+  is a different process and stays monitored.
+
+`LogSearchService` is *not* fleet-wide: without an explicit `serverId` it still searches the default
+server only.
+
 ## Wiring
 
 This is the opt-in **LogMonitor module** ([`../../Modules/LogMonitor/`](../../Modules/LogMonitor/), toggle
