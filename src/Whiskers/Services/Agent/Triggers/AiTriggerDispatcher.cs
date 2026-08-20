@@ -155,6 +155,11 @@ public sealed class AiTriggerDispatcher : IAiTriggerDispatcher
         sb.AppendLine($"Event: {AiTriggerEvents.Label(evt.EventType)} ({evt.EventType}).");
         if (!string.IsNullOrWhiteSpace(evt.ContainerName))
             sb.AppendLine($"Container: {evt.ContainerName} ({evt.Image}).");
+        // The server ID, spelled out: every tool takes the id, while the event text a model reads carries
+        // the display name. Without this an agent invents an id (or passes the name) and gets
+        // "Server not found" — then reports the container as missing, which it is not.
+        if (!string.IsNullOrWhiteSpace(evt.ServerId))
+            sb.AppendLine($"Server: {evt.ServerName ?? evt.ServerId} — pass serverId=\"{evt.ServerId}\" to every tool call about this container.");
         if (evt.ExitCode is { } ec) sb.AppendLine($"Exit code: {ec}.");
         if (evt.RestartCount is { } rc) sb.AppendLine($"Restart/trigger count: {rc}.");
         if (!string.IsNullOrWhiteSpace(evt.ImageInfo)) sb.AppendLine($"Info: {evt.ImageInfo}.");

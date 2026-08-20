@@ -50,6 +50,12 @@ All notable changes to Whiskers are documented here. The format follows
   Whiskers runs on. A container that merely shares its name on a remote host is a different process and
   stays monitored.
 
+- **An AI trigger acting on a remote alert reported the container as missing.** Its tools take a server id,
+  while everything it reads names the server ("Rabenhof (Hetzner)") — so it passed a name (or invented an
+  id), got "Server not found" and concluded the container did not exist. The trigger's task message now
+  states the server id explicitly, and the server lookup accepts a display name as well (ids win). Only
+  surfaced once alerts started arriving from hosts other than the default one.
+
 ### Security
 - Matrix messages are built from an HTML-encoded copy of the event. The log-alert detail now carries the
   matched log line — third-party text that must not reach an HTML body unescaped.

@@ -99,9 +99,18 @@ public class ServerConfigService : IServerConfigService, IInitializable
         return _cached.Servers.Where(s => s.Enabled).ToList();
     }
 
+    /// <summary>Resolves a server by id, falling back to its display name. Ids win, so a name that happens
+    /// to equal another server's id cannot shadow it. The fallback exists because everything a human or an
+    /// agent reads — dashboards, notifications, log lines — shows the NAME ("Rabenhof (Hetzner)"), while the
+    /// tools want the id ("rabenhof"); an agent acting on a fleet-wide alert otherwise fails with
+    /// "Server not found" and concludes the container does not exist.</summary>
     public Models.ServerConfig? GetServer(string serverId)
     {
-        return _cached.Servers.FirstOrDefault(s => s.Id == serverId);
+        if (string.IsNullOrWhiteSpace(serverId)) return null;
+
+        return _cached.Servers.FirstOrDefault(s => s.Id == serverId)
+            ?? _cached.Servers.FirstOrDefault(s => string.Equals(s.Id, serverId, StringComparison.OrdinalIgnoreCase))
+            ?? _cached.Servers.FirstOrDefault(s => string.Equals(s.Name, serverId, StringComparison.OrdinalIgnoreCase));
     }
 
     public Models.ServerConfig? GetDefaultServer()
