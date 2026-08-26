@@ -24,6 +24,7 @@ public sealed class SelfMetrics : ISelfMetrics
         public long Failures;
         public long Skips;
         public string? SkipReason;
+        public TimeSpan? ExpectedInterval;
     }
 
     // Key: "{loop}|{serverId}". Loops and servers are both bounded and small, so this never grows unbounded.
@@ -32,13 +33,14 @@ public sealed class SelfMetrics : ISelfMetrics
 
     private static string Key(string loop, string serverId) => $"{loop}|{serverId}";
 
-    public void RecordCycle(string loop, string serverId, TimeSpan duration, bool success)
+    public void RecordCycle(string loop, string serverId, TimeSpan duration, bool success, TimeSpan? interval = null)
     {
         var s = _loops.GetOrAdd(Key(loop, serverId), _ => new LoopState());
         Interlocked.Increment(ref s.Cycles);
         Interlocked.Exchange(ref s.DurationTicks, duration.Ticks);
         s.LastAttempt = DateTime.UtcNow;
         s.SkipReason = null;
+        if (interval is not null) s.ExpectedInterval = interval;
 
         if (success) s.LastSuccess = DateTime.UtcNow;
         else Interlocked.Increment(ref s.Failures);
@@ -71,7 +73,8 @@ public sealed class SelfMetrics : ISelfMetrics
                     Interlocked.Read(ref s.Cycles),
                     Interlocked.Read(ref s.Failures),
                     Interlocked.Read(ref s.Skips),
-                    s.SkipReason);
+                    s.SkipReason,
+                    s.ExpectedInterval);
             })
             .OrderBy(l => l.Loop, StringComparer.Ordinal)
             .ThenBy(l => l.ServerId, StringComparer.Ordinal)

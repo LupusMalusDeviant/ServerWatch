@@ -8,6 +8,10 @@ namespace Whiskers.Services.Observability.SelfMetrics;
 /// <param name="SkipReason">Why the loop did not look at this server, when it deliberately skipped it —
 /// "Kubernetes server, Docker loop", "suspended", "paused". A skipped server must still appear, or "the loop
 /// does not run for this server" is indistinguishable from "the loop found nothing".</param>
+/// <param name="ExpectedInterval">How often this loop intends to run. Reported by the loop itself, because
+/// it is the only place that knows its own cadence — a supervisor with its own table of intervals would
+/// quietly disagree with reality the first time someone changed a setting. Null means "cannot judge", and a
+/// supervisor must then stay silent rather than guess.</param>
 public sealed record LoopHealth(
     string Loop,
     string ServerId,
@@ -17,7 +21,8 @@ public sealed record LoopHealth(
     long Cycles,
     long Failures,
     long Skips,
-    string? SkipReason);
+    string? SkipReason,
+    TimeSpan? ExpectedInterval = null);
 
 /// <summary>
 /// What Whiskers knows about itself (Plan-0003 WP1/WP2).
@@ -32,8 +37,10 @@ public sealed record LoopHealth(
 /// </summary>
 public interface ISelfMetrics
 {
-    /// <summary>A cycle finished for this server.</summary>
-    void RecordCycle(string loop, string serverId, TimeSpan duration, bool success);
+    /// <summary>A cycle finished for this server. <paramref name="interval"/> is the loop's own cadence, which
+    /// is what lets a supervisor decide whether a gap is unusual — without it "no cycle for ten minutes" means
+    /// nothing, since one loop runs every minute and another every six hours.</summary>
+    void RecordCycle(string loop, string serverId, TimeSpan duration, bool success, TimeSpan? interval = null);
 
     /// <summary>The loop deliberately did not look at this server this cycle, and why. Recording the skip is
     /// the point: a server that simply vanishes from the metrics looks exactly like a quiet one.</summary>

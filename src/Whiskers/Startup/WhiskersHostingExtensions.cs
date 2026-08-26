@@ -151,6 +151,9 @@ public static class WhiskersHostingExtensions
         // the semaphores ARE the shared state, one per server for the whole process.
         builder.Services.Configure<ServerBudgetSettings>(builder.Configuration.GetSection(ServerBudgetSettings.SectionName));
         builder.Services.AddSingleton<Whiskers.Services.Observability.SelfMetrics.ISelfMetrics, Whiskers.Services.Observability.SelfMetrics.SelfMetrics>();
+        // Watches the watchers: reports the ABSENCE of cycles. Must never be suppressible by the
+        // mechanisms it supervises (Plan-0002 WP5.3).
+        builder.Services.AddHostedService<Whiskers.Services.Observability.ScanSupervisor>();
         builder.Services.AddSingleton<Whiskers.Services.Docker.Budget.IServerBudget, Whiskers.Services.Docker.Budget.ServerBudget>();
         builder.Services.AddSingleton<Whiskers.Services.Docker.Budget.IServerCircuitBreaker, Whiskers.Services.Docker.Budget.ServerCircuitBreaker>();
         builder.Services.AddSingleton<Whiskers.Services.Docker.IDockerConnectionManager, DockerConnectionManager>();

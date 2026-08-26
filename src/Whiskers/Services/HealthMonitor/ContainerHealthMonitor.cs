@@ -83,9 +83,11 @@ public class ContainerHealthMonitor : BackgroundService
         // skip. Without the skip a K8s host produces no health metrics at all, which looks exactly like a
         // host with nothing wrong (Plan-0003 WP2).
         foreach (var responded in listing.RespondedServerIds)
-            _selfMetrics.RecordCycle(SelfMetricsFleetExtensions.Loops.Health, responded, DateTime.UtcNow - startedAt, success: true);
+            _selfMetrics.RecordCycle(SelfMetricsFleetExtensions.Loops.Health, responded, DateTime.UtcNow - startedAt, success: true,
+                interval: TimeSpan.FromSeconds(_settings.CheckIntervalSeconds));
         foreach (var failure in listing.FailedServers)
-            _selfMetrics.RecordCycle(SelfMetricsFleetExtensions.Loops.Health, failure.ServerId, DateTime.UtcNow - startedAt, success: false);
+            _selfMetrics.RecordCycle(SelfMetricsFleetExtensions.Loops.Health, failure.ServerId, DateTime.UtcNow - startedAt, success: false,
+                interval: TimeSpan.FromSeconds(_settings.CheckIntervalSeconds));
         _selfMetrics.RecordKubernetesSkips(SelfMetricsFleetExtensions.Loops.Health, _serverConfig.GetEnabledServers());
 
         await ProcessServerReachabilityAsync(listing);

@@ -68,7 +68,8 @@ public class MetricsCollectorService : BackgroundService
                 foreach (var server in SelfMetricsServers())
                     _selfMetrics.RecordCycle(
                         Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.Loops.Metrics,
-                        server, DateTime.UtcNow - cycleStart, cycleOk);
+                        server, DateTime.UtcNow - cycleStart, cycleOk,
+                        interval: TimeSpan.FromSeconds(Math.Max(5, cfg.CollectionIntervalSeconds)));
             }
 
             // Floor the interval so a 0/negative misconfiguration cannot spin a hot loop.

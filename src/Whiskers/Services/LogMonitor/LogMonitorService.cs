@@ -330,7 +330,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         // record is the timestamp: a loop that has stopped writes nothing at all, and only the AGE of the last
         // success reveals that — failures are only counted while something still happens.
         _selfMetrics.RecordCycle("logmonitor", serverId, DateTime.UtcNow - startedAt,
-            success: failed == 0 || scanned > failed);
+            success: failed == 0 || scanned > failed, interval: CheckInterval);
 
         _logger.LogDebug("Scan of {Server} done: {Scanned} scanned, {NoRules} without a matching rule, {Failed} failed, of {Total}",
             containers.FirstOrDefault()?.ServerName ?? "?", scanned, noRules, failed, containers.Count);

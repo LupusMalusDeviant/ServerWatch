@@ -96,6 +96,14 @@ Dieser Plan setzt **zwingend** auf Plan-0001 auf. Ohne echten Abbruch entlastet 
 
 **Abnahme:** Meldeweg absichtlich abklemmen; die Aufsichtsregel schlägt trotzdem an.
 
+> 🟢 **WP5.3 erledigt** (2026-08-26) — der wichtigere Teil von WP5. `Services/Observability/ScanSupervisor.cs`: ein eigener Hintergrunddienst, der jede Minute prüft, ob ein Loop für einen Server seit mehr als **drei seiner eigenen Intervalle** keinen Zyklus mehr abgeschlossen hat, und dann `monitoring_stalled` meldet — **unabhängig von der Ursache**. Ein verkeilter Socket, ein ausgesperrter Container, ein pausierter Loop, eine unbehandelte Ausnahme und ein toter Thread sehen von hier aus gleich aus und bedeuten dasselbe.
+>
+> Damit die Aufsicht überhaupt urteilen kann, meldet **jeder Loop seine eigene Taktrate** mit (`RecordCycle(..., interval:)`). Ohne deklarierte Taktrate schweigt die Aufsicht — „seit zehn Minuten kein Zyklus" heißt bei einem Minutentakt etwas anderes als bei einem Sechs-Stunden-Takt, und eine geratene Schwelle hätte sie zur Lärmquelle gemacht. Eine Untergrenze von 5 Minuten verhindert, dass ein schneller Loop nach Sekunden jemanden weckt. Übersprungene Server (Kubernetes) gelten nie als stillstehend, sonst ginge der echte Fall im Rauschen unter.
+>
+> ⚠️ **Beinahe-Fehler, festgehalten:** Mein erster Testentwurf bestand aus **fünf Zusicherungen, die alle nur Schweigen prüften** — kein einziger verlangte, dass die Aufsicht anschlägt. Gegen einen Wächter, der nie meldet, wären alle fünf grün gewesen. Erst der Gegenbeweis machte es sichtbar: Aufsicht blind geschaltet ⇒ **nur der eine** Test rot, der das Anschlagen fordert, die anderen fünf blieben grün. Das ist heute Nacht der dritte Test, der nicht gemessen hat, was er behauptete.
+>
+> **Offen aus WP5:** WP5.1/WP5.2 (Darstellung ausgesperrter Container in der Oberfläche samt Alter des letzten Erfolgs) — reine UI-Arbeit. Die Zahlen dafür liegen jetzt in `ISelfMetrics`. Und: die Aufsicht muss beim Not-Aus (SP-5) ausdrücklich **nicht** pausierbar sein; das ist in Plan-0005 WP0 als eigenes Arbeitspaket vermerkt.
+
 ### WP-MCP: Agenten-Oberfläche
 
 **Zweck:** Das Paket ist erst fertig, wenn der Agent es benutzen kann — siehe [PRD-0013](../prd/0013-mcp-und-agentenoberflaeche.md).

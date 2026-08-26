@@ -293,7 +293,8 @@ public class CveMonitorService : BackgroundService, ICveMonitorService
             foreach (var server in servers)
                 _selfMetrics.RecordCycle(
                     Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.Loops.Cve,
-                    server.Id, DateTime.UtcNow - scanStartedAt, success: true);
+                    server.Id, DateTime.UtcNow - scanStartedAt, success: true,
+                    interval: TimeSpan.FromHours(Math.Max(1, settings.CheckIntervalHours)));
         }
         finally
         {
