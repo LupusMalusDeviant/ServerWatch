@@ -23,6 +23,7 @@ public class CveMonitorService : BackgroundService, ICveMonitorService
     private readonly ICveFindingsStore _store;
     private readonly IOptionsMonitor<CveMonitorSettings> _settings;
     private readonly ILogger<CveMonitorService> _logger;
+    private readonly Whiskers.Services.Observability.SelfMetrics.ISelfMetrics _selfMetrics;
 
     // C8: the scan-cycle collaborators are injected directly instead of being pulled from a per-cycle
     // IServiceProvider scope (service-locator antipattern). All of them are singletons — verified: none is
@@ -41,6 +42,7 @@ public class CveMonitorService : BackgroundService, ICveMonitorService
         ICveFindingsStore store,
         IOptionsMonitor<CveMonitorSettings> settings,
         ILogger<CveMonitorService> logger,
+        Whiskers.Services.Observability.SelfMetrics.ISelfMetrics selfMetrics,
         IServerConfigService serverConfig,
         IDockerService docker,
         IOsCveScanner osScanner,
@@ -53,6 +55,7 @@ public class CveMonitorService : BackgroundService, ICveMonitorService
         _store = store;
         _settings = settings;
         _logger = logger;
+        _selfMetrics = selfMetrics;
         _serverConfig = serverConfig;
         _docker = docker;
         _osScanner = osScanner;
@@ -144,8 +147,15 @@ public class CveMonitorService : BackgroundService, ICveMonitorService
 
             // Kubernetes clusters have no host shell / Docker API for the scanners — K8s image
             // scanning is a later Track B step (kubernetesImplement §B.3, explicitly not v1).
-            var servers = _serverConfig.GetEnabledServers()
+            var allServers = _serverConfig.GetEnabledServers();
+            var servers = allServers
                 .Where(s => s.ConnectionType != Whiskers.Models.ConnectionType.Kubernetes).ToList();
+
+            // Record the ones stepped over, so a Kubernetes host does not simply vanish from the metrics —
+            // absent, "no CVE scanning happens here" reads exactly like "no findings" (Plan-0003 WP2).
+            Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.RecordKubernetesSkips(
+                _selfMetrics, Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.Loops.Cve, allServers);
+            var scanStartedAt = DateTime.UtcNow;
             var threshold = ParseSeverity(settings.NotifySeverity);
 
             // Aggregate "new since last scan" per scan target, used for notifications.
@@ -277,6 +287,13 @@ public class CveMonitorService : BackgroundService, ICveMonitorService
             _logger.LogInformation(
                 "CVE scan cycle done: {Servers} server(s), {Targets} target(s) with new findings",
                 servers.Count, newPerTarget.Count);
+
+            // The scan runs hours apart, so its "last success" age is the only practical way to notice that
+            // it has stopped — a failure counter says nothing about a loop that no longer runs at all.
+            foreach (var server in servers)
+                _selfMetrics.RecordCycle(
+                    Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.Loops.Cve,
+                    server.Id, DateTime.UtcNow - scanStartedAt, success: true);
         }
         finally
         {

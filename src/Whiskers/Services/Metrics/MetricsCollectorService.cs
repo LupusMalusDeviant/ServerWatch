@@ -15,6 +15,7 @@ public class MetricsCollectorService : BackgroundService
     private readonly IOptionsMonitor<MetricAlertSettings> _alertSettings;
     private readonly IOptionsMonitor<MetricsSettings> _metricsSettings;
     private readonly ILogger<MetricsCollectorService> _logger;
+    private readonly Whiskers.Services.Observability.SelfMetrics.ISelfMetrics _selfMetrics;
     private readonly ConcurrentDictionary<string, AlertState> _alert = new();
     private DateTime _lastPrune;                 // OPT-2: prune at most hourly, not every 30s cycle
     private const int MaxStatsConcurrency = 8;   // OPT-11.2: bound the per-container stats fan-out
@@ -23,12 +24,14 @@ public class MetricsCollectorService : BackgroundService
         IServiceProvider services,
         IOptionsMonitor<MetricAlertSettings> alertSettings,
         IOptionsMonitor<MetricsSettings> metricsSettings,
-        ILogger<MetricsCollectorService> logger)
+        ILogger<MetricsCollectorService> logger,
+        Whiskers.Services.Observability.SelfMetrics.ISelfMetrics selfMetrics)
     {
         _services = services;
         _alertSettings = alertSettings;
         _metricsSettings = metricsSettings;
         _logger = logger;
+        _selfMetrics = selfMetrics;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -44,9 +47,12 @@ public class MetricsCollectorService : BackgroundService
             var cfg = _metricsSettings.CurrentValue;
             if (cfg.Enabled)
             {
+                var cycleStart = DateTime.UtcNow;
+                var cycleOk = false;
                 try
                 {
                     await CollectMetricsAsync(ct);
+                    cycleOk = true;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -56,6 +62,13 @@ public class MetricsCollectorService : BackgroundService
                 {
                     _logger.LogError(ex, "Metrics collection failed");
                 }
+
+                // One record per Docker server: the age of the last success is what reveals a collector that
+                // has quietly stopped, since a stalled loop produces no failures either.
+                foreach (var server in SelfMetricsServers())
+                    _selfMetrics.RecordCycle(
+                        Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.Loops.Metrics,
+                        server, DateTime.UtcNow - cycleStart, cycleOk);
             }
 
             // Floor the interval so a 0/negative misconfiguration cannot spin a hot loop.
@@ -66,8 +79,15 @@ public class MetricsCollectorService : BackgroundService
 
     private async Task CollectMetricsAsync(CancellationToken ct)
     {
+        var startedAt = DateTime.UtcNow;
         using var scope = _services.CreateScope();
         var docker = scope.ServiceProvider.GetRequiredService<IDockerService>();
+
+        // Kubernetes servers are filtered out further down the stack; record the skip so they do not simply
+        // vanish from the metrics and read as "nothing to report" (Plan-0003 WP2).
+        var servers = scope.ServiceProvider.GetRequiredService<Whiskers.Services.ServerConfig.IServerConfigService>()
+            .GetEnabledServers();
+        Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.RecordKubernetesSkips(_selfMetrics, Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.Loops.Metrics, servers);
         var metricsSource = scope.ServiceProvider.GetRequiredService<IMetricsSource>();
         var db = scope.ServiceProvider.GetRequiredService<MetricsDbContext>();
         var notify = scope.ServiceProvider.GetRequiredService<INotificationService>();
@@ -317,5 +337,16 @@ public class MetricsCollectorService : BackgroundService
         public DateTime AnomCooldown;
         public readonly Queue<double> CpuWin = new();
         public readonly Queue<double> MemWin = new();
+    }
+
+    /// <summary>The Docker servers this collector is responsible for — the ones a cycle record applies to.</summary>
+    private IReadOnlyList<string> SelfMetricsServers()
+    {
+        using var scope = _services.CreateScope();
+        return scope.ServiceProvider.GetRequiredService<Whiskers.Services.ServerConfig.IServerConfigService>()
+            .GetEnabledServers()
+            .Where(s => s.ConnectionType != Whiskers.Models.ConnectionType.Kubernetes)
+            .Select(s => s.Id)
+            .ToList();
     }
 }

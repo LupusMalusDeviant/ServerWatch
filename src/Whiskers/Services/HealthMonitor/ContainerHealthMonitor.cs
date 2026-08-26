@@ -7,6 +7,8 @@ using Whiskers.Models;
 using Whiskers.Services.Docker;
 using Whiskers.Services.Notifications;
 
+using Whiskers.Services.Observability.SelfMetrics;
+
 namespace Whiskers.Services.HealthMonitor;
 
 public class ContainerHealthMonitor : BackgroundService
@@ -17,6 +19,8 @@ public class ContainerHealthMonitor : BackgroundService
     private readonly IHubContext<ContainerHub> _hubContext;
     private readonly HealthMonitorSettings _settings;
     private readonly ILogger<ContainerHealthMonitor> _logger;
+    private readonly Whiskers.Services.Observability.SelfMetrics.ISelfMetrics _selfMetrics;
+    private readonly Whiskers.Services.ServerConfig.IServerConfigService _serverConfig;
 
     private readonly ConcurrentDictionary<string, string> _previousStates = new();
     private readonly ConcurrentDictionary<string, string> _previousHealth = new();
@@ -31,7 +35,9 @@ public class ContainerHealthMonitor : BackgroundService
         INotificationService notifications,
         IHubContext<ContainerHub> hubContext,
         IOptions<HealthMonitorSettings> settings,
-        ILogger<ContainerHealthMonitor> logger)
+        ILogger<ContainerHealthMonitor> logger,
+        Whiskers.Services.Observability.SelfMetrics.ISelfMetrics selfMetrics,
+        Whiskers.Services.ServerConfig.IServerConfigService serverConfig)
     {
         _docker = docker;
         _healthStore = healthStore;
@@ -39,6 +45,8 @@ public class ContainerHealthMonitor : BackgroundService
         _hubContext = hubContext;
         _settings = settings.Value;
         _logger = logger;
+        _selfMetrics = selfMetrics;
+        _serverConfig = serverConfig;
         _reachability = new ServerReachabilityTracker(
             _settings.ServerUnreachableCycles, _settings.ServerUnreachableColdStartCycles);
     }
@@ -67,8 +75,18 @@ public class ContainerHealthMonitor : BackgroundService
 
     private async Task RunHealthCycleAsync(CancellationToken ct)
     {
+        var startedAt = DateTime.UtcNow;
         var listing = await _docker.ListAllContainersDetailedAsync(all: true);
         var containers = listing.Containers;
+
+        // Every server this cycle touched gets a record, and every Kubernetes server it stepped over gets a
+        // skip. Without the skip a K8s host produces no health metrics at all, which looks exactly like a
+        // host with nothing wrong (Plan-0003 WP2).
+        foreach (var responded in listing.RespondedServerIds)
+            _selfMetrics.RecordCycle(SelfMetricsFleetExtensions.Loops.Health, responded, DateTime.UtcNow - startedAt, success: true);
+        foreach (var failure in listing.FailedServers)
+            _selfMetrics.RecordCycle(SelfMetricsFleetExtensions.Loops.Health, failure.ServerId, DateTime.UtcNow - startedAt, success: false);
+        _selfMetrics.RecordKubernetesSkips(SelfMetricsFleetExtensions.Loops.Health, _serverConfig.GetEnabledServers());
 
         await ProcessServerReachabilityAsync(listing);
 

@@ -87,6 +87,38 @@ public sealed class SelfMetricsTests : IDisposable
         Assert.Equal("Kubernetes server, Docker-only loop", loop.SkipReason);
     }
 
+    [Fact]
+    public void Every_docker_only_loop_marks_the_kubernetes_servers_it_steps_over()
+    {
+        // The concrete blind spot from PRD-0003: four loops filter Kubernetes servers out, and until now they
+        // did it silently. A K8s host therefore produced no health, metric, CVE or update data at all — which
+        // on a dashboard is indistinguishable from a host with nothing wrong.
+        var metrics = new SelfMetrics();
+        var fleet = new[]
+        {
+            new ServerConfig { Id = "badwolf", Name = "Badwolf", ConnectionType = ConnectionType.Local },
+            new ServerConfig { Id = "k3s", Name = "k3s cluster", ConnectionType = ConnectionType.Kubernetes }
+        };
+
+        foreach (var loop in new[]
+                 {
+                     SelfMetricsFleetExtensions.Loops.Health,
+                     SelfMetricsFleetExtensions.Loops.Metrics,
+                     SelfMetricsFleetExtensions.Loops.Cve,
+                     SelfMetricsFleetExtensions.Loops.ImageUpdate
+                 })
+        {
+            metrics.RecordKubernetesSkips(loop, fleet);
+        }
+
+        var skipped = metrics.Loops().Where(l => l.ServerId == "k3s").ToList();
+        Assert.Equal(4, skipped.Count);
+        Assert.All(skipped, l => Assert.Contains("Kubernetes", l.SkipReason));
+
+        // And the Docker host must NOT be marked as skipped — a false skip would hide a real gap.
+        Assert.DoesNotContain(metrics.Loops(), l => l.ServerId == "badwolf");
+    }
+
     // --- wired into the real loop ------------------------------------------------------------------------
 
     private LogMonitorService Monitor(FakeDocker docker, ISelfMetrics metrics, TimeSpan? timeout = null) =>

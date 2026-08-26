@@ -14,6 +14,7 @@ public class ImageUpdateChecker : BackgroundService
     private readonly IImageUpdateStore _store;
     private readonly IRegistryClient _registry;
     private readonly ILogger<ImageUpdateChecker> _logger;
+    private readonly Whiskers.Services.Observability.SelfMetrics.ISelfMetrics _selfMetrics;
     private readonly ImageUpdateSettings _settings;
 
     public ImageUpdateChecker(
@@ -21,13 +22,15 @@ public class ImageUpdateChecker : BackgroundService
         IImageUpdateStore store,
         IRegistryClient registry,
         IOptions<ImageUpdateSettings> settings,
-        ILogger<ImageUpdateChecker> logger)
+        ILogger<ImageUpdateChecker> logger,
+        Whiskers.Services.Observability.SelfMetrics.ISelfMetrics selfMetrics)
     {
         _services = services;
         _store = store;
         _registry = registry;
         _settings = settings.Value;
         _logger = logger;
+        _selfMetrics = selfMetrics;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -59,12 +62,27 @@ public class ImageUpdateChecker : BackgroundService
 
         try
         {
+            var cycleStartedAt = DateTime.UtcNow;
             using var scope = _services.CreateScope();
             var docker = scope.ServiceProvider.GetRequiredService<IDockerService>();
             var notification = scope.ServiceProvider.GetRequiredService<INotificationService>();
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ContainerHub>>();
 
+            // The Docker container listing excludes Kubernetes servers, so this loop never looks at them.
+            // Recording that is the difference between "explicitly not covered" and invisible (Plan-0003 WP2).
+            var allServers = scope.ServiceProvider
+                .GetRequiredService<Whiskers.Services.ServerConfig.IServerConfigService>().GetEnabledServers();
+            Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.RecordKubernetesSkips(
+                _selfMetrics,
+                Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.Loops.ImageUpdate,
+                allServers);
+
             var containers = await docker.ListAllContainersAsync(all: false);
+
+            foreach (var server in allServers.Where(s => s.ConnectionType != Whiskers.Models.ConnectionType.Kubernetes))
+                _selfMetrics.RecordCycle(
+                    Whiskers.Services.Observability.SelfMetrics.SelfMetricsFleetExtensions.Loops.ImageUpdate,
+                    server.Id, DateTime.UtcNow - cycleStartedAt, success: true);
             // ConcurrentBag: up to 5 parallel checks call .Add — a List<T> would lose entries or crash on growth.
             var newUpdates = new System.Collections.Concurrent.ConcurrentBag<ImageUpdateInfo>();
 
