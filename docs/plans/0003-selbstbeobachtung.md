@@ -39,7 +39,11 @@ Die wichtigste Einzelkennzahl ist nicht ein Fehlerzähler, sondern **das Alter d
 >
 > **Gegenbeweis:** Timeout-Zähler abgeklemmt ⇒ `The_timeout_that_went_uncounted_for_six_days_is_counted` rot. Zurückgebaut.
 >
-> **Offen aus SP-3:** WP2 für die übrigen Loops (Metrics, CVE, Health, ImageUpdate melden noch nichts), WP3.2 (Persistenz in eigener Tabelle, additive Migration in beide Assemblies), WP4 (Ansicht), WP5 (Aktions-Zeitachse), WP6 (Leerlaufkosten belegen).
+> 🟢 **WP2 vollständig** (2026-08-26, zweiter Durchgang): Health, Metrics, CVE und ImageUpdate melden jetzt ebenfalls ihre Zyklen — **und die Kubernetes-Server, die sie überspringen**. Gemeinsamer Helfer `SelfMetricsFleetExtensions` mit festen Loop-Namen, damit die Labels nicht in `logmonitor` / `log-monitor` / `LogMonitor` auseinanderlaufen.
+>
+> Damit ist der konkrete blinde Fleck aus dem PRD geschlossen: Ein K8s-Host lieferte bisher gar keine Gesundheits-, Metrik-, CVE- oder Update-Daten, und das ist auf einem Dashboard nicht davon zu unterscheiden, dass dort nichts Auffälliges ist. Ein Test hält beide Richtungen fest — alle vier Loops markieren den K8s-Server, und der Docker-Host wird **nicht** fälschlich als übersprungen geführt, denn ein falscher Skip würde eine echte Lücke verdecken.
+>
+> **Offen aus SP-3:** WP3.2 (Persistenz in eigener Tabelle, additive Migration in beide Assemblies), WP4 (Ansicht), WP5 (Aktions-Zeitachse), WP6 (Leerlaufkosten belegen).
 >
 > ⚠️ **Bekannter Flake:** In etwa 2 von 11 vollen Läufen fällt genau **ein** Test aus, beim einzigen Mal, an dem der Name erfasst wurde, `BackupServiceTests.Validate_accepts_an_equal_or_older_schema`. In Isolation und in allen gezielten Wiederholungen grün, kein Bezug zu den Änderungen dieses Pakets erkennbar. Festgehalten, nicht behoben.
 
