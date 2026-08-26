@@ -29,6 +29,21 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     // are only unique per host, so a fleet-wide scan must not let two hosts share one entry.
     private readonly ConcurrentDictionary<string, DateTime> _lastLogCheck = new();
 
+    // Consecutive TIMEOUTS per "{serverId}:{containerId}" — only timeouts, because only they mean "these logs
+    // cannot be read". Plus, per container, how long it is suspended and how far the backoff has climbed.
+    private readonly ConcurrentDictionary<string, int> _consecutiveTimeouts = new();
+    private readonly ConcurrentDictionary<string, DateTime> _suspendedUntil = new();
+    private readonly ConcurrentDictionary<string, int> _backoffStep = new();
+
+    /// <summary>Timeouts in a row before a container is taken out of the scan (Plan-0002 WP3).</summary>
+    private const int TimeoutsBeforeSuspension = 3;
+
+    /// <summary>Backoff steps. Capped so a repaired container returns within the hour rather than never.</summary>
+    private static readonly TimeSpan[] SuspensionBackoff =
+    {
+        TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(60)
+    };
+
     private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(60);
 
     // A single wedged Docker connection must not stall the cycle forever: hosts are scanned in parallel,
@@ -39,6 +54,13 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     // waiting 15 seconds each time. Production behaviour is unchanged: the constructor defaults to
     // DefaultLogFetchTimeout, and nothing outside the tests passes anything else.
     private readonly TimeSpan _logFetchTimeout;
+
+    /// <summary>The widest window a single log fetch may ask for (Plan-0002 WP1). Applying <c>since</c> costs
+    /// the daemon the whole file — it decodes the JSON log from the start to find the cut-off — so an
+    /// ever-widening window is genuinely more work, which is what turned a slow container into a permanently
+    /// failing one on 2026-08-26. Lines older than this are lost after an outage; that is the deliberate side
+    /// of the trade, because without the cap they were lost anyway, only permanently.</summary>
+    public static readonly TimeSpan MaxLookback = TimeSpan.FromMinutes(10);
 
     // Lines fetched per container per cycle. Since the Docker call now caps the transfer even with a
     // `since` filter, this is the real ceiling on how much of a burst we can still match in one cycle.
@@ -126,12 +148,20 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         var containers = listing.Containers;
         var selfServerIds = ResolveSelfServerIds();
         var hits = new ConcurrentQueue<LogAlertHit>();
+        // Suspension/resume notices are collected here and sent on the cycle thread, next to the alerts, so
+        // the order does not depend on which host answered first.
+        var scanEvents = new ConcurrentQueue<NotificationEvent>();
 
         // One chain per server: hosts in parallel so remote latency doesn't add up over the fleet, the
         // containers of a host sequentially so we don't fan a burst of log requests at one connection.
         await Task.WhenAll(containers
             .GroupBy(c => c.ServerId, StringComparer.OrdinalIgnoreCase)
-            .Select(g => ScanServerAsync(g.ToList(), rules, compiledRegexes, selfServerIds, hits, ct)));
+            .Select(g => ScanServerAsync(g.ToList(), rules, compiledRegexes, selfServerIds, hits, scanEvents, ct)));
+
+        // Scan-health notices first: "this container is no longer being read" is context for any alert that
+        // follows, and its absence is the thing an operator must not have to infer.
+        foreach (var scanEvent in scanEvents)
+            await _notifications.SendAsync(scanEvent);
 
         // Rule bookkeeping and notifications happen back here, on the cycle's own thread: MetricsDbContext
         // is not thread-safe, and the notification order shouldn't depend on which host answered first.
@@ -187,6 +217,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         IReadOnlyDictionary<string, Regex> compiledRegexes,
         IReadOnlySet<string> selfServerIds,
         ConcurrentQueue<LogAlertHit> hits,
+        ConcurrentQueue<NotificationEvent> events,
         CancellationToken ct)
     {
         int scanned = 0, noRules = 0, failed = 0;
@@ -200,9 +231,15 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
 
             var applicableRules = rules.Where(r => RuleApplies(r, container)).ToList();
             if (applicableRules.Count == 0) { noRules++; continue; }
-            scanned++;
 
             var key = CompositeKey(container);
+
+            // Suspended: its logs could not be read n times in a row, so asking again this cycle would only
+            // repeat the cost. It is NOT silently skipped — the suspension was announced when it started, and
+            // the container is marked as unmonitored rather than left looking unremarkable (Plan-0002 WP3).
+            if (_suspendedUntil.TryGetValue(key, out var until) && DateTime.UtcNow < until) continue;
+
+            scanned++;
 
             try
             {
@@ -212,9 +249,15 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
                 // during it would otherwise fall into neither window. A line seen twice at the window edge
                 // is caught by the rule cooldown; a line lost is lost for good.
                 var fetchedAt = DateTime.UtcNow;
-                var since = _lastLogCheck.TryGetValue(key, out var last) ? last : fetchedAt;
+                // Capped at MaxLookback. Without the cap a failure left `since` behind while `now` moved on,
+                // so every failed cycle asked for a wider window than the last — failure made the next attempt
+                // more expensive, and the state was self-sustaining (Plan-0002 WP1).
+                var floor = fetchedAt - MaxLookback;
+                var last = _lastLogCheck.TryGetValue(key, out var watermark) ? watermark : fetchedAt;
+                var since = last > floor ? last : floor;
                 var logs = await FetchLogsAsync(container, since, ct);
                 _lastLogCheck[key] = fetchedAt;
+                NoteReadable(container, key, events);
                 var lines = logs.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
                 // Per-container trace of what the scan actually saw. Without it, "no alert" cannot be told
@@ -255,10 +298,24 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
                     }
                 }
             }
+            catch (TimeoutException ex)
+            {
+                failed++;
+                // The watermark advances even though nothing was read: the lines in this window are lost, and
+                // that is the deliberate side of the trade (Plan-0002 WP1). Leaving it behind is what made the
+                // next attempt more expensive and the failure permanent. The lost span is named in the alert
+                // rather than quietly dropped.
+                _lastLogCheck[key] = DateTime.UtcNow;
+                _logger.LogDebug(ex, "Log fetch for {Container} on {Server} timed out", container.Name, container.ServerName);
+                NoteUnreadable(container, key, events);
+            }
             catch (Exception ex)
             {
-                // No watermark update on failure — the next cycle retries the same window.
                 failed++;
+                // Everything else — container gone, host refused, malformed response — says nothing about the
+                // logs being unreadable, so it must not count towards a suspension. Reporting a removed
+                // container as a scan problem would page someone every time a job container finishes.
+                _lastLogCheck[key] = DateTime.UtcNow;
                 _logger.LogDebug(ex, "Failed to check logs for {Container} on {Server}", container.Name, container.ServerName);
             }
         }
@@ -292,6 +349,58 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
                 container.Name, container.ServerName, _logFetchTimeout.TotalSeconds);
             throw new TimeoutException($"Log fetch for {container.Name} on {container.ServerName} timed out.");
         }
+    }
+
+    /// <summary>Counts a timeout and, once the run is long enough, takes the container out of the scan with a
+    /// growing backoff — and says so. A container whose logs cannot be read is worth a message, not an endless
+    /// retry: the fetch timeouts were already being written to the log on 2026-08-26 and nobody counted them,
+    /// which is why the earliest and most precise signal of the whole incident went unused for six days.</summary>
+    private void NoteUnreadable(ContainerInfo container, string key, ConcurrentQueue<NotificationEvent> events)
+    {
+        var timeouts = _consecutiveTimeouts.AddOrUpdate(key, 1, (_, n) => n + 1);
+        if (timeouts < TimeoutsBeforeSuspension) return;
+        if (_suspendedUntil.ContainsKey(key)) return;   // already suspended; the notice was sent once
+
+        var step = _backoffStep.AddOrUpdate(key, 0, (_, n) => Math.Min(n + 1, SuspensionBackoff.Length - 1));
+        var pause = SuspensionBackoff[step];
+        _suspendedUntil[key] = DateTime.UtcNow + pause;
+
+        _logger.LogWarning("Log scan for {Container} on {Server} suspended for {Pause} after {Timeouts} timeouts",
+            container.Name, container.ServerName, pause, timeouts);
+
+        events.Enqueue(new NotificationEvent
+        {
+            EventType = "log_scan_suspended",
+            ContainerId = container.Id,
+            ContainerName = container.Name,
+            Image = container.Image,
+            ServerId = container.ServerId,
+            ServerName = container.ServerName,
+            ImageInfo = $"{timeouts} log fetches in a row timed out. Whiskers is not reading this container's " +
+                        $"logs for {pause.TotalMinutes:0} minutes — alert rules covering it produce nothing " +
+                        "meanwhile, which is not the same as 'no problems'."
+        });
+    }
+
+    /// <summary>A readable fetch clears the run. If the container had been suspended, its return is announced
+    /// too — otherwise the operator is left believing it is still unmonitored.</summary>
+    private void NoteReadable(ContainerInfo container, string key, ConcurrentQueue<NotificationEvent> events)
+    {
+        _consecutiveTimeouts.TryRemove(key, out _);
+        _backoffStep.TryRemove(key, out _);
+        if (!_suspendedUntil.TryRemove(key, out _)) return;
+
+        _logger.LogInformation("Log scan for {Container} on {Server} resumed", container.Name, container.ServerName);
+        events.Enqueue(new NotificationEvent
+        {
+            EventType = "log_scan_resumed",
+            ContainerId = container.Id,
+            ContainerName = container.Name,
+            Image = container.Image,
+            ServerId = container.ServerId,
+            ServerName = container.ServerName,
+            ImageInfo = "The container's logs are readable again and it is back under the alert rules."
+        });
     }
 
     /// <summary>Identifies a container across the fleet. Container ids are unique per host only, so every

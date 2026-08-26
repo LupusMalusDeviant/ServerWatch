@@ -72,6 +72,17 @@ Dieser Plan setzt **zwingend** auf Plan-0001 auf. Ohne echten Abbruch entlastet 
 
 **Abnahme:** 20 Zyklen mit dauerhaft kaputtem Container erzeugen genau eine Aussperrungsmeldung.
 
+> 🟢 **WP1–WP4 erledigt** (2026-08-26). Fensterdeckel (`MaxLookback` = 10 min), Wasserzeichen wird **auch im Fehlerfall** fortgeschrieben, Timeout-Zähler je Container **getrennt von anderen Fehlerarten**, Aussperrung nach 3 Timeouts in Folge mit Backoff 5/15/60 min, Meldungen `log_scan_suspended` / `log_scan_resumed` (im `NotificationFormatter` mit eigenem Text und Link auf `/logs`). Meldungen werden auf dem Zyklus-Thread verschickt, vor den Alarmen — „dieser Container wird nicht mehr gelesen" ist Kontext für alles, was danach kommt. **656/656 Tests grün.**
+>
+> ⚠️ **Zwei Testentwürfe haben in Folge nicht gemessen, was sie behaupteten** — beide nur aufgefallen, weil die Regel „erst rot sehen" eingehalten wurde:
+>
+> 1. **Zu kleiner Zeitabstand.** Mit 120 ms zwischen den Zyklen wächst das Fenster pro Runde nur um 120 ms und verschwindet in der Toleranz. Der Test war gegen den **unbehobenen** Code grün. Behoben mit 400 ms Abstand und einer Zusicherung auf die Streuung statt auf Erst/Letzt-Differenz.
+> 2. **Falsche Ausgangslage.** Ein Container, der **nie** erfolgreich war, hat gar kein Wasserzeichen — `since` fällt jeden Zyklus auf „jetzt" zurück, und das Fenster bleibt flach, ob die Ratsche da ist oder nicht. Der Vorfall hatte die Form „erst gesund, dann langsam"; erst mit einem erfolgreichen ersten Zyklus wird die Ratsche überhaupt sichtbar. Danach unterscheidet der Test sauber: mit Behebung `[414, 411, 409]`, ohne `[414, 911, 1379]`.
+>
+> Dazu ein dritter, kleinerer Fund: `FakeDocker.Calls` war ein `ConcurrentBag`, dessen Aufzählung nicht der Einfügereihenfolge folgt — `Last()` lieferte den **ersten** Aufruf. Auf `ConcurrentQueue` umgestellt und ein `CallsInOrder`-Zugriff ergänzt.
+>
+> **Offen aus SP-2:** WP5 (Sichtbarkeit in der Oberfläche und die nicht abschaltbare Aufsichtsregel „letzter erfolgreicher Scan älter als 3 Intervalle"). WP5.3 ist der wichtigere Teil, weil er auch greift, wenn der Meldeweg versagt — er braucht aber die Selbstbeobachtung aus SP-3 als Datenquelle.
+
 ### WP5: Sichtbarkeit und Aufsicht
 
 **Zweck:** Verhindern, dass die Aussperrung selbst zum blinden Fleck wird.

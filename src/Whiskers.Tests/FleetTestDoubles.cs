@@ -82,7 +82,12 @@ internal sealed class FakeDocker : IDockerService
     /// <summary>Servers that list fine but whose log fetch throws.</summary>
     public HashSet<string> FailingServerIds { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public ConcurrentBag<LogCall> Calls { get; } = new();
+    // A queue, not a bag: ConcurrentBag does not preserve insertion order, and a test that needs "the most
+    // recent fetch" silently got the oldest one. Ordering matters here, so the type has to provide it.
+    public ConcurrentQueue<LogCall> Calls { get; } = new();
+
+    /// <summary>Every log call in the order it was made.</summary>
+    public IReadOnlyList<LogCall> CallsInOrder => Calls.ToList();
 
     public List<LogCall> LogCalls => Calls.OrderBy(c => c.ContainerId, StringComparer.Ordinal)
         .ThenBy(c => c.ServerId, StringComparer.Ordinal).ToList();
@@ -137,7 +142,7 @@ internal sealed class FakeDocker : IDockerService
 
     public async Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null, CancellationToken ct = default)
     {
-        Calls.Add(new LogCall(containerId, serverId, since));
+        Calls.Enqueue(new LogCall(containerId, serverId, since));
         if (FailingServerIds.Contains(serverId ?? "")) throw new InvalidOperationException("host down");
 
         var key = $"{serverId}/{containerId}";

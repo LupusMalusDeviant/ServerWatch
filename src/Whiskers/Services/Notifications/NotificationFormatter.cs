@@ -27,6 +27,8 @@ public static class NotificationFormatter
         "server_recovered" => ("Server reachable again", "Info"),
         // Whiskers throttling ITSELF. Never silent: a self-imposed pause that nobody is told about
         // turns "quiet" into "blind", and hides the next incident behind the fix for the last one.
+        "log_scan_suspended" => ("Log scan suspended for this container", "Warning"),
+        "log_scan_resumed" => ("Log scan resumed for this container", "Info"),
         "server_throttled" => ("Whiskers paused its own calls to this server", "Warning"),
         "server_throttling_ended" => ("Whiskers resumed calls to this server", "Info"),
         _ when e.EventType.StartsWith("log_alert", StringComparison.Ordinal) => ("Log alert / error in log", "Warning"),
@@ -55,6 +57,7 @@ public static class NotificationFormatter
         if (e.EventType == "cve_finding") return "cves";
         if (e.EventType is "server_unreachable" or "server_recovered"
                 or "server_throttled" or "server_throttling_ended") return "servers";
+        if (e.EventType is "log_scan_suspended" or "log_scan_resumed") return "logs";
         if (e.EventType.StartsWith("log_alert", StringComparison.Ordinal)) return "logs";
         if (e.EventType is "image_update" or "auto_update_failed"
                 or "unhealthy" or "oom_killed" or "stopped" or "restart_loop"
