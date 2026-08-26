@@ -150,6 +150,7 @@ public static class WhiskersHostingExtensions
         // The per-server load cap every Docker call passes through (Plan-0001 WP3). Singleton by necessity:
         // the semaphores ARE the shared state, one per server for the whole process.
         builder.Services.Configure<ServerBudgetSettings>(builder.Configuration.GetSection(ServerBudgetSettings.SectionName));
+        builder.Services.AddSingleton<Whiskers.Services.Observability.SelfMetrics.ISelfMetrics, Whiskers.Services.Observability.SelfMetrics.SelfMetrics>();
         builder.Services.AddSingleton<Whiskers.Services.Docker.Budget.IServerBudget, Whiskers.Services.Docker.Budget.ServerBudget>();
         builder.Services.AddSingleton<Whiskers.Services.Docker.Budget.IServerCircuitBreaker, Whiskers.Services.Docker.Budget.ServerCircuitBreaker>();
         builder.Services.AddSingleton<Whiskers.Services.Docker.IDockerConnectionManager, DockerConnectionManager>();

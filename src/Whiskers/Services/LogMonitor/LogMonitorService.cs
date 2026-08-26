@@ -23,6 +23,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     private readonly INotificationService _notifications;
     private readonly ILogger<LogMonitorService> _logger;
     private readonly Docker.Budget.IServerBudget _budget;
+    private readonly Observability.SelfMetrics.ISelfMetrics _selfMetrics;
     private readonly ConcurrentDictionary<string, DateTime> _cooldowns = new();
     // Per-container timestamp of the last log check, so we fetch only NEW lines and an old ERROR line
     // doesn't re-alert every cycle. Keyed by "{serverId}:{containerId}" (see CompositeKey): container ids
@@ -84,6 +85,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         INotificationService notifications,
         ILogger<LogMonitorService> logger,
         Docker.Budget.IServerBudget budget,
+        Observability.SelfMetrics.ISelfMetrics selfMetrics,
         TimeSpan? logFetchTimeout = null)
     {
         _scopeFactory = scopeFactory;
@@ -92,6 +94,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         _notifications = notifications;
         _logger = logger;
         _budget = budget;
+        _selfMetrics = selfMetrics;
         _logFetchTimeout = logFetchTimeout ?? DefaultLogFetchTimeout;
     }
 
@@ -221,6 +224,8 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         CancellationToken ct)
     {
         int scanned = 0, noRules = 0, failed = 0;
+        var serverId = containers.FirstOrDefault()?.ServerId ?? "?";
+        var startedAt = DateTime.UtcNow;
 
         foreach (var container in containers)
         {
@@ -306,6 +311,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
                 // next attempt more expensive and the failure permanent. The lost span is named in the alert
                 // rather than quietly dropped.
                 _lastLogCheck[key] = DateTime.UtcNow;
+                _selfMetrics.Count("log_fetch_timeouts", container.ServerId);
                 _logger.LogDebug(ex, "Log fetch for {Container} on {Server} timed out", container.Name, container.ServerName);
                 NoteUnreadable(container, key, events);
             }
@@ -319,6 +325,12 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
                 _logger.LogDebug(ex, "Failed to check logs for {Container} on {Server}", container.Name, container.ServerName);
             }
         }
+
+        // A cycle counts as successful when it got through without every container failing. The point of the
+        // record is the timestamp: a loop that has stopped writes nothing at all, and only the AGE of the last
+        // success reveals that — failures are only counted while something still happens.
+        _selfMetrics.RecordCycle("logmonitor", serverId, DateTime.UtcNow - startedAt,
+            success: failed == 0 || scanned > failed);
 
         _logger.LogDebug("Scan of {Server} done: {Scanned} scanned, {NoRules} without a matching rule, {Failed} failed, of {Total}",
             containers.FirstOrDefault()?.ServerName ?? "?", scanned, noRules, failed, containers.Count);

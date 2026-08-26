@@ -322,6 +322,13 @@ public static class WhiskersPipelineExtensions
             var docker = ctx.RequestServices.GetRequiredService<Whiskers.Services.Docker.IDockerService>();
             var sb = new System.Text.StringBuilder();
 
+            // Whiskers about ITSELF, before anything that needs the Docker API (Plan-0003 WP3). Deliberately
+            // first and outside the try: these are process-local counters that cannot fail, and they are the
+            // numbers you need precisely when the fleet is not answering. Exporting the whole container
+            // inventory while saying nothing about the exporter is how a monitor stays blind to itself —
+            // the log monitor wrote "timed out" every cycle for six days and no series carried it.
+            AppendSelfMetrics(sb, ctx.RequestServices);
+
             try
             {
                 var containers = await docker.ListAllContainersAsync(all: true);
@@ -446,5 +453,84 @@ public static class WhiskersPipelineExtensions
         // DiscoverEnabled is deterministic, so this list matches the one used for ConfigureServices.
         foreach (var module in Whiskers.Modules.ModuleCatalog.DiscoverEnabled(app.Configuration))
             await module.InitializeAsync(app.Services, CancellationToken.None);
+    }
+
+    /// <summary>The <c>whiskers_self_*</c> series: what Whiskers is doing to the fleet and how its own loops
+    /// are faring (Plan-0003 WP3). Reads process-local counters only — no Docker call, no database round trip,
+    /// so this section is still there when everything else is broken.
+    ///
+    /// <para>Label cardinality is bounded by servers and loops, never by containers: a container label across
+    /// a 200-container fleet would multiply the series into the thousands and fill the time-series database —
+    /// a monitoring outage caused by monitoring.</para></summary>
+    private static void AppendSelfMetrics(System.Text.StringBuilder sb, IServiceProvider services)
+    {
+        static string Esc(string v) => v.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+        var loops = services.GetService<Whiskers.Services.Observability.SelfMetrics.ISelfMetrics>();
+        var budget = services.GetService<Whiskers.Services.Docker.Budget.IServerBudget>();
+        var circuit = services.GetService<Whiskers.Services.Docker.Budget.IServerCircuitBreaker>();
+        var now = DateTime.UtcNow;
+
+        if (loops is not null)
+        {
+            sb.AppendLine("# HELP whiskers_self_loop_last_success_age_seconds Seconds since this loop last completed a cycle for this server. THE number that reveals a loop which has stopped: failures are only counted while something still happens, a stalled loop produces nothing at all.");
+            sb.AppendLine("# TYPE whiskers_self_loop_last_success_age_seconds gauge");
+            foreach (var l in loops.Loops())
+            {
+                var age = l.LastSuccess is { } t ? (now - t).TotalSeconds : -1;
+                sb.AppendLine($"whiskers_self_loop_last_success_age_seconds{{loop=\"{Esc(l.Loop)}\",server=\"{Esc(l.ServerId)}\"}} {age:F0}");
+            }
+
+            sb.AppendLine("# HELP whiskers_self_loop_cycle_seconds Duration of this loop's last cycle for this server");
+            sb.AppendLine("# TYPE whiskers_self_loop_cycle_seconds gauge");
+            foreach (var l in loops.Loops())
+                sb.AppendLine($"whiskers_self_loop_cycle_seconds{{loop=\"{Esc(l.Loop)}\",server=\"{Esc(l.ServerId)}\"}} {l.LastDuration.TotalSeconds:F3}");
+
+            sb.AppendLine("# HELP whiskers_self_loop_cycles_total Cycles run, failed and deliberately skipped");
+            sb.AppendLine("# TYPE whiskers_self_loop_cycles_total counter");
+            foreach (var l in loops.Loops())
+            {
+                var labels = $"loop=\"{Esc(l.Loop)}\",server=\"{Esc(l.ServerId)}\"";
+                sb.AppendLine($"whiskers_self_loop_cycles_total{{{labels},result=\"ok\"}} {l.Cycles - l.Failures}");
+                sb.AppendLine($"whiskers_self_loop_cycles_total{{{labels},result=\"failed\"}} {l.Failures}");
+                // Skips are exported too: a server a loop never looks at must not simply be absent, or
+                // "not monitored here" reads exactly like "nothing to report".
+                sb.AppendLine($"whiskers_self_loop_cycles_total{{{labels},result=\"skipped\"}} {l.Skips}");
+            }
+
+            foreach (var (name, perServer) in loops.Counters())
+            {
+                sb.AppendLine($"# TYPE whiskers_self_{name}_total counter");
+                foreach (var (server, value) in perServer)
+                    sb.AppendLine($"whiskers_self_{name}_total{{server=\"{Esc(server)}\"}} {value}");
+            }
+        }
+
+        if (budget is not null)
+        {
+            sb.AppendLine("# HELP whiskers_self_calls_in_flight Docker calls Whiskers currently has open against this server");
+            sb.AppendLine("# TYPE whiskers_self_calls_in_flight gauge");
+            sb.AppendLine("# HELP whiskers_self_call_wait_seconds_max Longest a call has waited for a budget slot. A rising value means the budget is the bottleneck, not the server.");
+            sb.AppendLine("# TYPE whiskers_self_call_wait_seconds_max gauge");
+            foreach (var b in budget.SnapshotAll())
+            {
+                var server = $"server=\"{Esc(b.ServerId)}\"";
+                sb.AppendLine($"whiskers_self_calls_in_flight{{{server},lane=\"background\"}} {b.BackgroundInFlight}");
+                sb.AppendLine($"whiskers_self_calls_in_flight{{{server},lane=\"interactive\"}} {b.InteractiveInFlight}");
+                sb.AppendLine($"whiskers_self_call_wait_seconds_max{{{server}}} {b.MaxWaitMilliseconds / 1000.0:F3}");
+                sb.AppendLine($"whiskers_self_calls_total{{{server}}} {b.Started}");
+                sb.AppendLine($"whiskers_self_duplicate_calls_discarded_total{{{server}}} {b.DiscardedDuplicates}");
+            }
+        }
+
+        if (circuit is not null)
+        {
+            sb.AppendLine("# HELP whiskers_self_circuit_open 1 while Whiskers has stopped calling this server. Whiskers is NOT checking that host meanwhile — this is not the same as the host being fine.");
+            sb.AppendLine("# TYPE whiskers_self_circuit_open gauge");
+            foreach (var c in circuit.SnapshotAll())
+                sb.AppendLine($"whiskers_self_circuit_open{{server=\"{Esc(c.ServerId)}\"}} {(c.State == Whiskers.Services.Docker.Budget.ServerCircuitState.Closed ? 0 : 1)}");
+        }
+
+        sb.AppendLine();
     }
 }

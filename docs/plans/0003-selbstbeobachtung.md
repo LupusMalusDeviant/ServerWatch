@@ -31,6 +31,18 @@ Die wichtigste Einzelkennzahl ist nicht ein Fehlerzähler, sondern **das Alter d
 
 **Ergebnis:** Eine Schnittstelle, die alle Loops bedienen.
 
+> 🟢 **WP1, WP2 (Log-Monitor) und WP3.1 erledigt** (2026-08-26). `Services/Observability/SelfMetrics/` mit `ISelfMetrics` + `SelfMetrics`: Loop-Gesundheit je (Loop, Server) — letzter Erfolg, letzter Versuch, Zyklusdauer, Zyklen, Fehlschläge, **Skips mit Grund** — plus benannte Zähler. Label-Satz technisch auf Loop/Server/Name begrenzt; ein Container-Label wäre bei 200 Containern der Weg in eine Monitoring-Störung durch Monitoring.
+>
+> **Die wichtigste Kennzahl ist `whiskers_self_loop_last_success_age_seconds`.** Fehlschläge werden nur gezählt, solange überhaupt etwas passiert; ein stehengebliebener Loop erzeugt gar nichts, und nur das *Alter* dieses Zeitstempels verrät ihn. Ebenso bewusst exportiert: `result="skipped"` — ein Server, den ein Loop überspringt, muss sichtbar bleiben, sonst liest sich „wird hier nicht überwacht" exakt wie „nichts zu berichten". Genau dieser Fall liegt heute bei vier Loops und Kubernetes-Servern vor.
+>
+> `/metrics` trägt die `whiskers_self_*`-Serien **vor** dem Inventar und außerhalb des try-Blocks: es sind prozesslokale Zähler, die nicht fehlschlagen können, und man braucht sie genau dann, wenn die Flotte nicht antwortet. Ein Test belegt das („The_self_series_survive_a_fleet_that_answers_nothing"), ein zweiter, dass der Endpunkt ohne Token weiterhin 401 liefert — die Nutzlast sagt jetzt zusätzlich, wie sich Whiskers verhält.
+>
+> **Gegenbeweis:** Timeout-Zähler abgeklemmt ⇒ `The_timeout_that_went_uncounted_for_six_days_is_counted` rot. Zurückgebaut.
+>
+> **Offen aus SP-3:** WP2 für die übrigen Loops (Metrics, CVE, Health, ImageUpdate melden noch nichts), WP3.2 (Persistenz in eigener Tabelle, additive Migration in beide Assemblies), WP4 (Ansicht), WP5 (Aktions-Zeitachse), WP6 (Leerlaufkosten belegen).
+>
+> ⚠️ **Bekannter Flake:** In etwa 2 von 11 vollen Läufen fällt genau **ein** Test aus, beim einzigen Mal, an dem der Name erfasst wurde, `BackupServiceTests.Validate_accepts_an_equal_or_older_schema`. In Isolation und in allen gezielten Wiederholungen grün, kein Bezug zu den Änderungen dieses Pakets erkennbar. Festgehalten, nicht behoben.
+
 ### WP2: Loop-Kennzahlen
 
 **Zweck:** Die Kennzahl, die einen stehenden Loop verrät.

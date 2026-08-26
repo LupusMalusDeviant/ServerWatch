@@ -70,7 +70,7 @@ public sealed class LogMonitorLoadInvariantTests : IDisposable
             new FakeServerConfig(new ServerConfig { Id = "local", Name = "Badwolf", ConnectionType = ConnectionType.Local, IsDefault = true }),
             new FakeNotifications(),
             NullLogger<LogMonitorService>.Instance,
-            TestBudget.Create(),
+            TestBudget.Create(), new Whiskers.Services.Observability.SelfMetrics.SelfMetrics(),
             FetchTimeout);
 
     private async Task RunCyclesAsync(LogMonitorService monitor)
