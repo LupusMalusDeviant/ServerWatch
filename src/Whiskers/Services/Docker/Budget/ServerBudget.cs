@@ -44,6 +44,8 @@ public sealed class ServerBudget : IServerBudget
 
     public IDisposable BackgroundScope() => new Scope();
 
+    public bool IsBackgroundCall => IsBackground.Value;
+
     private sealed class Scope : IDisposable
     {
         private readonly bool _previous = IsBackground.Value;

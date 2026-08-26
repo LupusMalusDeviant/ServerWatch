@@ -7,6 +7,20 @@ All notable changes to Whiskers are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **An emergency stop for Whiskers' own background checks.** During the 2026-08-26 incident the load on the
+  host *was* Whiskers, and the only way to stop it was SSH on the affected server — past the tool causing the
+  problem. Background checks for a single server can now be paused, from the UI-facing service or over MCP
+  (`pause_server_checks`, `resume_server_checks`, `list_paused_servers`). The check sits at the one point every
+  Docker call passes through, so a background loop cannot miss it; interactive access keeps working, because
+  an operator pauses a server in order to look at it. Agents may pause for at most 120 minutes and must state
+  a reason — an open-ended pause is a decision about how much blindness is acceptable, and that stays with a
+  person. **MCP clients must reconnect to see the new tools.**
+
+  The switch is built with its own failure mode in mind: a pause that outlives its reason is a server nobody
+  is watching and nobody remembers deciding not to watch. So every pause is announced when set and when
+  lifted, expires on its own, is not carried across restarts, and — while it stands — is re-reported every 24
+  hours. The rule that reports the *absence* of checks cannot be paused by it; that separation is enforced by
+  a test rather than by convention.
 - **The agent can now see deploys, backups and its own alert history.** Four read-only MCP tools closed real
   blind spots: `list_git_deploy_apps` (repo, branch, outcome of the last deploy), `list_volume_backups` and
   `list_volumes` (answering "when was this volume last backed up?", with the age spelled out), and

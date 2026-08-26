@@ -23,18 +23,21 @@ public class DockerConnectionManager : IDockerConnectionManager
 
     private readonly Budget.IServerBudget _budget;
     private readonly Budget.IServerCircuitBreaker _circuit;
+    private readonly Observability.ILoopSuspensionService _suspension;
 
     public DockerConnectionManager(
         IServerConfigService serverConfig,
         ISshTunnelManager sshTunnelManager,
         Budget.IServerBudget budget,
         Budget.IServerCircuitBreaker circuit,
+        Observability.ILoopSuspensionService suspension,
         ILogger<DockerConnectionManager> logger)
     {
         _serverConfig = serverConfig;
         _sshTunnelManager = sshTunnelManager;
         _budget = budget;
         _circuit = circuit;
+        _suspension = suspension;
         _logger = logger;
     }
 
@@ -54,6 +57,13 @@ public class DockerConnectionManager : IDockerConnectionManager
         // A Kubernetes cluster is not a Docker host — any Docker-path caller reaching this is a
         // routing bug (workloads go through Services/Workloads). Fail loud instead of trying to
         // build a Docker transport out of kube fields.
+        // The emergency stop, at the one point every Docker call passes through (Plan-0005 WP1). Background
+        // traffic to a paused server stops here; interactive traffic does not, so the operator can still look
+        // at the server they just paused. During the 2026-08-26 incident there was no way to do this from
+        // inside Whiskers at all — the fix had to travel over SSH, past the tool causing the problem.
+        if (_budget.IsBackgroundCall && _suspension.IsSuspended(server.Id))
+            throw new Observability.ServerSuspendedException(server.Id, "emergency stop");
+
         if (server.ConnectionType == ConnectionType.Kubernetes)
             throw new InvalidOperationException(
                 $"Server '{server.Name}' is a Kubernetes cluster — handled by the workload seam, not the Docker connection manager.");

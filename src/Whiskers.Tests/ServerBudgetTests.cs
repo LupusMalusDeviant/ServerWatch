@@ -13,11 +13,13 @@ public class ServerBudgetTests
 {
     /// <summary>Runs <paramref name="callers"/> operations at once and reports the highest number that were
     /// ever inside the budget at the same moment.</summary>
-    private static async Task<int> PeakConcurrencyAsync(IServerBudget budget, string serverId, int callers, bool background)
+    private static async Task<int> PeakConcurrencyAsync(
+        IServerBudget budget, string serverId, int callers, bool background, int expected)
     {
         var inFlight = 0;
         var peak = 0;
         var release = new TaskCompletionSource();
+        var everyoneIn = new TaskCompletionSource();
 
         var running = Enumerable.Range(0, callers).Select(_ => Task.Run(async () =>
         {
@@ -29,14 +31,23 @@ public class ServerBudgetTests
                 while (now > (seen = Volatile.Read(ref peak)))
                     Interlocked.CompareExchange(ref peak, now, seen);
 
+                if (now >= expected) everyoneIn.TrySetResult();
+
                 await release.Task;              // hold the slot until everyone has had a chance to enter
                 Interlocked.Decrement(ref inFlight);
                 return 0;
             });
         })).ToArray();
 
-        // Long enough for every caller that CAN get in to have got in; the ones the budget holds back stay out.
-        await Task.Delay(200);
+        // Wait for the callers the budget SHOULD admit rather than for a fixed span. The fixed 200 ms was a
+        // guess about the thread pool: under the full suite the pool is busy, sometimes only one of the six
+        // Task.Run bodies had started when the clock ran out, and the test failed for a reason that had
+        // nothing to do with the budget. A flaky guard is a guard people end up muting.
+        await everyoneIn.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Then a moment for a caller the budget should have HELD BACK to sneak in — that would raise the peak
+        // above the limit, which is the failure this test exists to catch.
+        await Task.Delay(100);
         release.SetResult();
         await Task.WhenAll(running);
 
@@ -48,7 +59,7 @@ public class ServerBudgetTests
     {
         var budget = TestBudget.Create(background: 3, interactive: 4);
 
-        var peak = await PeakConcurrencyAsync(budget, "badwolf", callers: 12, background: true);
+        var peak = await PeakConcurrencyAsync(budget, "badwolf", callers: 12, background: true, expected: 3);
 
         Assert.Equal(3, peak);
     }
@@ -58,7 +69,7 @@ public class ServerBudgetTests
     {
         // The counter-proof for the test above: if the cap were not actually enforced, both cases would show
         // the same number and the assertion would be measuring nothing.
-        var peak = await PeakConcurrencyAsync(TestBudget.Create(background: 8), "badwolf", callers: 12, background: true);
+        var peak = await PeakConcurrencyAsync(TestBudget.Create(background: 8), "badwolf", callers: 12, background: true, expected: 8);
 
         Assert.Equal(8, peak);
     }
@@ -68,8 +79,8 @@ public class ServerBudgetTests
     {
         var budget = TestBudget.Create(background: 2);
 
-        var a = PeakConcurrencyAsync(budget, "badwolf", callers: 6, background: true);
-        var b = PeakConcurrencyAsync(budget, "burgcloud", callers: 6, background: true);
+        var a = PeakConcurrencyAsync(budget, "badwolf", callers: 6, background: true, expected: 2);
+        var b = PeakConcurrencyAsync(budget, "burgcloud", callers: 6, background: true, expected: 2);
         await Task.WhenAll(a, b);
 
         // A busy host must not throttle a healthy one — the fleet is not one queue.

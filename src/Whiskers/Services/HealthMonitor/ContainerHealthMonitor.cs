@@ -20,6 +20,7 @@ public class ContainerHealthMonitor : BackgroundService
     private readonly HealthMonitorSettings _settings;
     private readonly ILogger<ContainerHealthMonitor> _logger;
     private readonly Whiskers.Services.Observability.SelfMetrics.ISelfMetrics _selfMetrics;
+    private readonly Whiskers.Services.Observability.ILoopSuspensionService _suspension;
     private readonly Whiskers.Services.ServerConfig.IServerConfigService _serverConfig;
 
     private readonly ConcurrentDictionary<string, string> _previousStates = new();
@@ -37,6 +38,7 @@ public class ContainerHealthMonitor : BackgroundService
         IOptions<HealthMonitorSettings> settings,
         ILogger<ContainerHealthMonitor> logger,
         Whiskers.Services.Observability.SelfMetrics.ISelfMetrics selfMetrics,
+        Whiskers.Services.Observability.ILoopSuspensionService suspension,
         Whiskers.Services.ServerConfig.IServerConfigService serverConfig)
     {
         _docker = docker;
@@ -46,6 +48,7 @@ public class ContainerHealthMonitor : BackgroundService
         _settings = settings.Value;
         _logger = logger;
         _selfMetrics = selfMetrics;
+        _suspension = suspension;
         _serverConfig = serverConfig;
         _reachability = new ServerReachabilityTracker(
             _settings.ServerUnreachableCycles, _settings.ServerUnreachableColdStartCycles);
@@ -113,6 +116,11 @@ public class ContainerHealthMonitor : BackgroundService
     {
         foreach (var evt in _reachability.Evaluate(listing))
         {
+            // A paused server is silent on purpose. Reporting it as unreachable would page the operator about
+            // the switch they just pressed, and would bury the pause announcement under its own consequence
+            // (Plan-0005 WP1). The pause is not hidden — it was announced, and it carries its own reminder.
+            if (_suspension.IsSuspended(evt.ServerId ?? string.Empty)) continue;
+
             if (evt.EventType == "server_unreachable")
                 _logger.LogWarning("Server {ServerName} unreachable: {Detail}", evt.ServerName, evt.ImageInfo);
             else

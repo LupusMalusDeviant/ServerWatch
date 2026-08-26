@@ -9,6 +9,27 @@ Two separate things live here: what Whiskers **did** (governance recording, belo
 |---|---|
 | `SelfMetrics/` | Loop health per (loop, server): last success, last attempt, cycle duration, failures, and **skips with a reason**. Exported as `whiskers_self_*` on `/metrics`. See [`SelfMetrics/ISelfMetrics.cs`](SelfMetrics/ISelfMetrics.cs). |
 | `ScanSupervisor.cs` | Watches the watchers: raises `monitoring_stalled` when a loop has not completed a cycle for a server in three of its own intervals — whatever the cause. |
+| `ILoopSuspensionService.cs` / `LoopSuspensionService.cs` | The emergency stop: pause one server's background checks. Announced, time-bounded, fail-open, not persisted across restarts (deliberately — see the file). |
+| `SuspensionReminder.cs` | Keeps saying that a paused server is still unwatched, every 24 h, for as long as it stays paused. |
+| `ServerSuspendedException.cs` | What a background caller gets when it reaches a paused server. Its own type so a pause is never counted as a failure. |
+
+### The emergency stop and its limits
+
+On 2026-08-26 the load on the host was Whiskers itself, and the only way to stop it was SSH on the affected
+server — past the tool causing the problem. `ILoopSuspensionService` is the way back that does not require
+reaching the machine being hurt.
+
+The check sits in `DockerConnectionManager.GetClientAsync`, the one point every Docker call passes through, so
+a new background loop cannot forget to ask. Only background traffic is turned away: interactive access keeps
+working, because an operator pauses a server in order to look at it.
+
+Two rules hold the switch honest, and both are enforced by tests rather than by convention:
+
+- **`ScanSupervisor` must not know this service exists.** It reports that nothing is being checked, and a
+  supervisor that can be silenced by the switch it supervises is a blindfold with a label on it. That is why
+  the 24-hour reminder lives in a *separate* service, `SuspensionReminder`, which may read the pauses.
+- **A pause is never silent and never open-ended by accident.** It is announced when set and when lifted, it
+  lapses on its own, and while it stands the reminder keeps repeating that the server is unwatched.
 
 Whiskers exported the container inventory of the whole fleet and not one number about itself. On 2026-08-26
 the log monitor wrote "timed out after 15s" into every cycle for six days; nothing counted it, so nothing

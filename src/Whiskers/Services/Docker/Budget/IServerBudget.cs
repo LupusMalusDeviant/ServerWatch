@@ -49,6 +49,11 @@ public interface IServerBudget
     /// harmless; the flag is restored on dispose.</summary>
     IDisposable BackgroundScope();
 
+    /// <summary>Whether the current call is running inside a <see cref="BackgroundScope"/>.
+    /// The emergency stop needs this: it cuts background traffic to a paused server but leaves the
+    /// operator able to look at the very server they just paused.</summary>
+    bool IsBackgroundCall { get; }
+
     /// <summary>Current usage for one server. Never throws for an unknown server — it reports an idle
     /// budget, because "no data" and "nothing running" must not be told apart by an exception.</summary>
     ServerBudgetSnapshot Snapshot(string serverId);

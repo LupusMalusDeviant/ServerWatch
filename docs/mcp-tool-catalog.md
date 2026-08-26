@@ -47,15 +47,18 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 | `list_firewall_rules` | read | List firewall (UFW) rules on a server. |
 | `list_networks` | read | List all Docker networks on a server. Shows name, driver, scope, subnet, and connected containers. |
 | `list_nginx_sites` | read | List Nginx sites (enabled and available) on a server. |
+| `list_paused_servers` | read | List servers whose background checks are currently paused, with the reason, who paused them (an operator or Whiskers itself), and when the pause expires. A paused server produces no health, log, metric or CVE findings — silence from it means nothing is being looked at, not that nothing is wrong. |
 | `list_servers` | read | List all configured servers with their connection type and status. Optionally filter by a group or tag (case-insensitive) to narrow a large fleet. |
 | `list_ssl_certificates` | read | List SSL/TLS certificates managed by certbot on a server. |
 | `list_systemd_services` | read | List systemd services on a server. |
 | `list_tables` | read | List tables in a database with row counts and sizes. |
 | `manage_systemd_service` | write | Manage a systemd service (start, stop, restart, enable, disable). |
+| `pause_server_checks` | write | Pause Whiskers' own background checks (health, logs, metrics, CVE, image updates) for one server, for a bounded number of minutes. Use this when Whiskers itself is the load on a host. Interactive access keeps working, so the server can still be inspected. The pause is announced, expires by itself, and is reminded about if it outlives its reason. This does NOT stop the containers on that server and does NOT block anything running there. |
 | `remove_firewall_rule` | write | Remove a firewall rule by its number. |
 | `remove_network` | write | Remove a Docker network by name or ID. |
 | `renew_ssl_certificate` | write | Renew an SSL certificate using certbot. |
 | `restart_container` | write | Restart a Docker container. |
+| `resume_server_checks` | write | Resume Whiskers' background checks for a server that was paused. Safe to call even if it is not paused. Turning monitoring back on is never the dangerous direction, so this has no time limit. |
 | `set_container_env` | write | Set environment variables in a container's .env file and restart via docker compose. Only works for containers managed by docker-compose. Provide variables as 'KEY=VALUE' pairs separated by newlines or commas. Existing variables not included are kept unchanged. |
 | `start_container` | write | Start a stopped Docker container. |
 | `stop_container` | write | Stop a running Docker container. |
@@ -131,7 +134,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 
 | Level | Tools |
 |---|---|
-| read | 37 |
-| write | 31 |
+| read | 38 |
+| write | 33 |
 | admin | 3 |
-| **total** | **71** |
+| **total** | **74** |

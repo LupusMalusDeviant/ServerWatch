@@ -32,6 +32,18 @@ Dieser Plan hat eine Besonderheit: **Der Prüfstand existiert bereits.** Die Met
 
 **Abnahme:** Der Datensatz enthält den Lastsprung am 20.08. um 14:02 und die Entlastung am 26.08. um 15:07.
 
+> ⏸️ **WP0 blockiert — zwei Nutzerentscheidungen** (2026-08-26). Der Prüfstand ist die Grundlage des ganzen Pakets, aber die Daten liegen nicht hier: `ServerMetrics` für BurgCloud steckt in der Datenbank der laufenden Whiskers-Instanz auf Badwolf. Sie zu holen wirft zwei Fragen auf, die nicht nebenbei zu entscheiden sind:
+>
+> 1. **Produktionszugriff.** Der Export braucht einen Lesezugriff auf die Datenbank der laufenden Instanz (`ssh badwolf`). Lesend und harmlos — aber ein Zugriff auf ein Produktivsystem, und der Auftrag lautete ausdrücklich „kein Deploy". Ich habe das nicht ohne Rückfrage getan.
+> 2. **Öffentliches Repo.** Das Produkt-Repo ist öffentlich. Echte Betriebsdaten der eigenen Server — Serverkennungen, CPU-, Speicher- und Plattenverläufe über eine Woche — in einen öffentlichen Commit zu legen, ist eine bewusste Entscheidung. Der Plan lässt „anonymisiert, falls nötig" zu; das wäre der Mittelweg (Serverkennungen ersetzen, Zeitstempel relativ statt absolut).
+>
+> **Mögliche Wege**, in absteigender Aussagekraft:
+> - **a)** Echte Daten anonymisiert ins Repo — voller Beweiswert, verlangt Punkt 1 und eine Anonymisierungsrunde.
+> - **b)** Echte Daten lokal halten (`.gitignore`), Test überspringt sich, wenn die Datei fehlt — beweiskräftig auf deiner Maschine, aber in CI wertlos, und ein Test, der sich still überspringt, ist genau die Sorte Lücke, gegen die dieses Paket antritt.
+> - **c)** Synthetischer Datensatz aus den **dokumentierten** Messwerten des Vorfallsberichts (12 % → 98 % in zwei Minuten, sechs Tage Plateau, Container-Summe 12 %). Sofort machbar, ohne Produktionszugriff — aber es ist dann nachgebautes Verhalten, nicht der echte Verlauf, und der Plan verlangt ausdrücklich die echten Daten.
+>
+> Bis dahin ruht SP-4. Die übrigen Pakete hängen nicht davon ab.
+
 ### WP1: Host-Schwellen
 
 **Zweck:** Die Lücke schließen, durch die der Vorfall gefallen ist.

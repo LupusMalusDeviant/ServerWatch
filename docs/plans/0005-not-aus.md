@@ -148,6 +148,55 @@ Plan-0001 WP4 (Circuit) ──> WP3
 
 Der Pausendienst ist additiv. Fällt er aus, laufen die Loops (fail-open). Eine dauerhafte Deaktivierung der Bedienung ist möglich, ohne den automatischen Circuit-Pfad zu verlieren.
 
+## 🟢 Stand der Umsetzung (2026-08-26)
+
+**Umgesetzt: WP0 vollständig, WP1 im Kern, WP-MCP vollständig.** 685/685 Tests grün, DI-Graph über den
+Boot-Matrix-Test (`ValidateOnBuild`) geprüft. Nicht deployt, nicht gepusht.
+
+| Paket | Stand | Nachweis |
+|---|---|---|
+| WP0.1 Erinnerung an lange Pausen | ✅ | `SuspensionReminder.cs`, 4 Tests — davon zwei, die das **Auslösen** verlangen |
+| WP0.2 Aufsicht nicht pausierbar | ✅ | `LoopSuspensionTests.The_supervisor_cannot_be_paused_by_the_emergency_stop` — Gegenprobe rot gesehen |
+| WP1.1 Zustand je Server | ✅ | `ILoopSuspensionService`, `LoopSuspension`-Record mit Ablauf, Auslöser, Grund, Beginn |
+| WP1.2 Persistenz über Neustart | ⛔ **bewusst nicht** | siehe Abweichung 1 |
+| WP1.3 Fail-open | ✅ | `LoopSuspensionService.IsSuspended` fängt und meldet, Loops laufen weiter |
+| WP1.4 Zentrale Abfrage | ✅ *anders gelöst* | siehe Abweichung 2 |
+| WP-MCP.1–.2 | ✅ | `LoopSuspensionTools`, im Katalog, Registrierungszählung 40 → 43 |
+
+### Drei Abweichungen vom Plan — bitte prüfen
+
+**1. Die Pause überlebt bewusst KEINEN Neustart** (WP1.2 und ein DoD-Punkt).
+Der Plan verlangt Persistenz. Beim Bauen wurde das zum Argument gegen sich selbst: Eine Pause ist die Reaktion
+auf etwas, das *gerade* passiert. Überlebt sie einen Neustart, überlebt sie auch den Grund — und ein Server,
+der seit dem letzten Neustart unbeobachtet ist, ohne dass jemand die Entscheidung dazu erinnert, ist genau die
+stille Blindheit, gegen die WP0 gebaut wurde. Die 24-Stunden-Erinnerung deckt den Fall *innerhalb* eines
+Prozesslebens ab. **Das ist eine Entscheidung, keine Auslassung** — wenn Persistenz gewünscht ist, gehört sie
+zusammen mit einem Wiederanlauf-Hinweis („diese Pause stammt von vor dem Neustart") gebaut.
+
+**2. Kein Architekturtest über `BackgroundService`, sondern eine Sperre im Verkehr.**
+Der Plan wollte einen Test, der jede Schleife ohne Pausenabfrage anmeckert. Umgesetzt ist stattdessen die
+Abfrage in `DockerConnectionManager.GetClientAsync` — dem einen Punkt, an dem *jeder* Docker-Aufruf vorbeikommt
+(alle 24 Aufrufstellen, auch die 20, die das Budget aus Plan-0001 umgehen). Eine neue Schleife kann die Abfrage
+damit nicht vergessen, weil sie sie gar nicht selbst stellt. Nur Hintergrundverkehr wird abgewiesen —
+interaktiv bleibt der Server sichtbar, denn man pausiert ihn, *um* ihn anzusehen.
+
+**3. Namen der MCP-Werkzeuge weichen ab.** Plan: `get_suspension_status`, `suspend_server_loops`,
+`resume_server_loops`. Gebaut: `list_paused_servers`, `pause_server_checks`, `resume_server_checks` — passend
+zur `list_*`-Konvention der übrigen 88 Werkzeuge. `pause_server_checks` ist auf **120 Minuten gedeckelt** und
+verlangt eine Begründung; „bis Widerruf" bleibt dem Menschen vorbehalten. Zurückschalten ist ungedeckelt, weil
+*mehr* Beobachtung nie die gefährliche Richtung ist.
+
+### Offen — und einer davon mit Einwand
+
+- **WP3 (automatische Pause bei offenem Circuit) — Einwand, nicht umgesetzt.** Der Circuit aus Plan-0001
+  sperrt den Server bereits während der Abkühlzeit. Eine zusätzliche Pause obendrauf hieße: fünf Fehlschläge
+  in Folge nehmen die Überwachung eines Servers für eine deutlich längere Zeit vom Netz — also genau dann,
+  wenn er wackelt und man am meisten sehen will. Dazu käme eine zweite Meldung für denselben Vorgang.
+  **Das ist eine Verhaltensverschärfung, die eine Entscheidung braucht**, keine Fleißarbeit.
+- WP2.1/2.2/2.4 (Bedienelemente in der Oberfläche, globaler Not-Aus mit Admin-Recht) — MCP-Weg steht, UI fehlt.
+- WP4 (Rückkehr ohne Sturm), WP5 (Darstellung `pausiert` ≠ `gesund` ≠ `ausgefallen`).
+- Wirksamkeitsmessung **auf dem Zielserver** und `tools/list` am laufenden Server: beides braucht einen Deploy.
+
 ## Definition of Done
 
 - [ ] WP0–WP5 umgesetzt

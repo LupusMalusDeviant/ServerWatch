@@ -24,7 +24,7 @@ public class McpToolRegistrationTests
     /// that nobody listed here, fails the build instead of quietly changing what the server serves.</summary>
     private static readonly Dictionary<string, int> ExpectedToolsPerModule = new(StringComparer.Ordinal)
     {
-        ["all-in-one"]    = 40,   // ContainerTools 12, ServerTools 13, MonitoringTools 4, NetworkTools 5, DatabaseTools 6
+        ["all-in-one"]    = 43,   // ContainerTools 12, ServerTools 13, MonitoringTools 4, NetworkTools 5, DatabaseTools 6, LoopSuspensionTools 3
         ["scheduler"]     = 4,
         ["logmonitor"]    = 3,
         ["cve"]           = 4,

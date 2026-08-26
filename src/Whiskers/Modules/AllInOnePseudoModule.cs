@@ -34,7 +34,7 @@ public sealed class AllInOnePseudoModule : IWhiskersModule
     public IReadOnlyList<Type> McpToolTypes { get; } = new[]
     {
         typeof(ContainerTools), typeof(ServerTools), typeof(MonitoringTools),
-        typeof(NetworkTools), typeof(DatabaseTools),
+        typeof(NetworkTools), typeof(DatabaseTools), typeof(LoopSuspensionTools),
         // Scheduler/Log/Cve tools → their modules; Cloud+Hetzner tools → Modules/CloudControl;
         // AgentTools (instruct_agent) → Modules/Agent (RoadToSAP Phase 1).
     };

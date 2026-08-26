@@ -118,6 +118,12 @@ public static class McpPermissionLevels
         ["list_volume_backups"] = Read,
         ["list_volumes"] = Read,
         ["list_recent_alerts"] = Read,
+        // Plan-0005 WP2 — the emergency stop. Pausing is Write, not Admin: it makes Whiskers do LESS,
+        // and putting it behind the highest bar would mean the load-shedding switch is the one thing an
+        // operator-level key cannot reach while the fleet is under load.
+        ["list_paused_servers"] = Read,
+        ["pause_server_checks"] = Write,
+        ["resume_server_checks"] = Write,
 
         // Scheduler tools
         ["list_scheduled_tasks"] = Read,
@@ -220,6 +226,9 @@ public static class McpPermissionLevels
         ["list_volume_backups"] = "Volume-Backups",
         ["list_volumes"] = "Volume-Backups",
         ["list_recent_alerts"] = "Benachrichtigungen",
+        ["list_paused_servers"] = "Überwachung",
+        ["pause_server_checks"] = "Überwachung",
+        ["resume_server_checks"] = "Überwachung",
 
         // Cloud (Hetzner/Hostinger)
         ["list_cloud_servers"] = "Cloud",
