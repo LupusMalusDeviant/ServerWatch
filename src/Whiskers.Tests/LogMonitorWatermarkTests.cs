@@ -52,6 +52,7 @@ public sealed class LogMonitorWatermarkTests : IDisposable
             notifications,
             NullLogger<LogMonitorService>.Instance,
             TestBudget.Create(), new Whiskers.Services.Observability.SelfMetrics.SelfMetrics(),
+            new NoExclusions(),
             FetchTimeout);
 
     private static FakeDocker WedgedContainer() =>

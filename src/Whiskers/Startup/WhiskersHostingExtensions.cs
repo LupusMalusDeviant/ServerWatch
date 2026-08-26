@@ -154,6 +154,13 @@ public static class WhiskersHostingExtensions
         // Watches the watchers: reports the ABSENCE of cycles. Must never be suppressible by the
         // mechanisms it supervises (Plan-0002 WP5.3).
         builder.Services.AddSingleton<Whiskers.Services.Observability.ILoopSuspensionService, Whiskers.Services.Observability.LoopSuspensionService>();
+        // Access-path detection for the log scan (Plan-0007 WP1). The self-host set is resolved once at
+        // registration: which servers can hold OUR container is a property of the fleet configuration.
+        builder.Services.AddSingleton<Whiskers.Services.LogMonitor.Hygiene.ILogScanExclusions>(sp =>
+            new Whiskers.Services.LogMonitor.Hygiene.LogScanExclusions(
+                sp.GetRequiredService<ILogger<Whiskers.Services.LogMonitor.Hygiene.LogScanExclusions>>(),
+                Whiskers.Services.LogMonitor.LogMonitorService.ResolveSelfServerIds(
+                    sp.GetRequiredService<Whiskers.Services.ServerConfig.IServerConfigService>())));
         builder.Services.AddHostedService<Whiskers.Services.Observability.ScanSupervisor>();
         builder.Services.AddHostedService<Whiskers.Services.Observability.SuspensionReminder>();
         builder.Services.AddSingleton<Whiskers.Services.Docker.Budget.IServerBudget, Whiskers.Services.Docker.Budget.ServerBudget>();

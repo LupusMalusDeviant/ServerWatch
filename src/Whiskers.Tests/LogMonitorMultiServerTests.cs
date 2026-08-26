@@ -69,7 +69,13 @@ public sealed class LogMonitorMultiServerTests : IDisposable
 
     private LogMonitorService Monitor(FakeDocker docker, FakeNotifications notifications, FakeServerConfig servers) =>
         new(_sp.GetRequiredService<IServiceScopeFactory>(), docker, servers, notifications,
-            NullLogger<LogMonitorService>.Instance, TestBudget.Create(), new Whiskers.Services.Observability.SelfMetrics.SelfMetrics());
+            NullLogger<LogMonitorService>.Instance, TestBudget.Create(), new Whiskers.Services.Observability.SelfMetrics.SelfMetrics(),
+            // The REAL detector: this class contains the test that demands our own container is skipped on
+            // the local host and scanned on a remote one, so a stand-in here would assert nothing.
+            new Whiskers.Services.LogMonitor.Hygiene.LogScanExclusions(
+                NullLogger<Whiskers.Services.LogMonitor.Hygiene.LogScanExclusions>.Instance,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "local" },
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "serverwatch" }));
 
     private static FakeServerConfig TwoServers() => new(
         new Whiskers.Models.ServerConfig { Id = "local", Name = "Badwolf (local)", ConnectionType = ConnectionType.Local, IsDefault = true },

@@ -94,6 +94,34 @@ public class SelfMetricsEndpointTests
     });
 
     [Fact]
+    public async Task A_paused_server_shows_up_as_a_number() => await WithAppAsync(async (client, services) =>
+    {
+        // Plan-0005: a paused server reports nothing at all, which on a dashboard reads exactly like a quiet
+        // one. The pause has to be a series somebody can alert on, or the emergency stop becomes a way to hide
+        // a server rather than protect it.
+        var suspension = services.GetRequiredService<Whiskers.Services.Observability.ILoopSuspensionService>();
+        suspension.Suspend("badwolf", DateTime.UtcNow.AddMinutes(30), "test", automatic: true);
+
+        var body = await ScrapeAsync(client);
+
+        Assert.Contains("whiskers_loops_paused{server=\"badwolf\",automatic=\"true\"} 1", body);
+
+        suspension.Resume("badwolf");
+        Assert.DoesNotContain("whiskers_loops_paused{server=\"badwolf\"", await ScrapeAsync(client));
+    });
+
+    [Fact]
+    public async Task The_log_scan_exclusion_count_is_exported() => await WithAppAsync(async (client, _) =>
+    {
+        // Plan-0007 WP2.2. What matters is not the value but its movement: exclusions appearing without a
+        // configuration change mean the access-path detection has grown too greedy, and a container excluded
+        // by mistake looks precisely like one with nothing to report.
+        var body = await ScrapeAsync(client);
+
+        Assert.Contains("whiskers_log_scan_exclusions", body);
+    });
+
+    [Fact]
     public async Task The_endpoint_stays_shut_without_the_token() => await WithAppAsync(async (client, _) =>
     {
         var response = await client.GetAsync("/metrics");

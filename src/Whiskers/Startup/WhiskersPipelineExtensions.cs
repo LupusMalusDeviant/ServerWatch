@@ -469,7 +469,30 @@ public static class WhiskersPipelineExtensions
         var loops = services.GetService<Whiskers.Services.Observability.SelfMetrics.ISelfMetrics>();
         var budget = services.GetService<Whiskers.Services.Docker.Budget.IServerBudget>();
         var circuit = services.GetService<Whiskers.Services.Docker.Budget.IServerCircuitBreaker>();
+        var exclusions = services.GetService<Whiskers.Services.LogMonitor.Hygiene.ILogScanExclusions>();
+        var suspensions = services.GetService<Whiskers.Services.Observability.ILoopSuspensionService>();
         var now = DateTime.UtcNow;
+
+        if (exclusions is not null)
+        {
+            // Plan-0007 WP2.2. The number to watch is not its value but its MOVEMENT: exclusions that appear
+            // without a configuration change mean the access-path detection has grown too greedy, and a
+            // wrongly excluded container looks exactly like one with nothing to report.
+            sb.AppendLine("# HELP whiskers_log_scan_exclusions Containers the log scan steps over on this server, by reason. Growth without a configuration change means the detection is too greedy.");
+            sb.AppendLine("# TYPE whiskers_log_scan_exclusions gauge");
+            foreach (var group in exclusions.Current().GroupBy(e => (e.ServerId, e.Reason)))
+                sb.AppendLine($"whiskers_log_scan_exclusions{{server=\"{Esc(group.Key.ServerId)}\",reason=\"{Esc(group.Key.Reason)}\"}} {group.Count()}");
+        }
+
+        if (suspensions is not null)
+        {
+            // Plan-0005. A paused server reports nothing, which reads like a quiet one — so the pause itself
+            // has to be a number somebody can alert on.
+            sb.AppendLine("# HELP whiskers_loops_paused Whether background checks for this server are paused (1) or running (0). A paused server produces no findings; that is not the same as having none.");
+            sb.AppendLine("# TYPE whiskers_loops_paused gauge");
+            foreach (var paused in suspensions.Current())
+                sb.AppendLine($"whiskers_loops_paused{{server=\"{Esc(paused.ServerId)}\",automatic=\"{(paused.Automatic ? "true" : "false")}\"}} 1");
+        }
 
         if (loops is not null)
         {

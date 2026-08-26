@@ -71,6 +71,7 @@ public sealed class LogMonitorLoadInvariantTests : IDisposable
             new FakeNotifications(),
             NullLogger<LogMonitorService>.Instance,
             TestBudget.Create(), new Whiskers.Services.Observability.SelfMetrics.SelfMetrics(),
+            new NoExclusions(),
             FetchTimeout);
 
     private async Task RunCyclesAsync(LogMonitorService monitor)

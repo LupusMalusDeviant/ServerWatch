@@ -7,6 +7,16 @@ All notable changes to Whiskers are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The log scan no longer reads the record of its own traffic.** The two containers that triggered the
+  2026-08-26 incident were the tunnel and socket proxy Whiskers reaches Docker through: every request it makes
+  is a line in their logs, and in two weeks those logs reached 822 MB. Containers on the access path are now
+  detected — by matching the address and port Whiskers actually connects to against what the container
+  publishes, never by name — and skipped by the log-alert scan only; health, metric and CVE monitoring still
+  cover them. `SERVERWATCH_SELF_CONTAINERS` keeps working and takes precedence. Every exclusion is visible in
+  the new `whiskers_log_scan_exclusions` metric and the read-only `get_log_hygiene_report` MCP tool, because
+  a container excluded by mistake looks exactly like one with nothing to report. This removes the *trigger*
+  of that incident, not its cause — the cause was a log fetch that was abandoned rather than cancelled, and
+  both the alert text and the report say so. **MCP clients must reconnect to see the new tool.**
 - **An emergency stop for Whiskers' own background checks.** During the 2026-08-26 incident the load on the
   host *was* Whiskers, and the only way to stop it was SSH on the affected server — past the tool causing the
   problem. Background checks for a single server can now be paused, from the UI-facing service or over MCP

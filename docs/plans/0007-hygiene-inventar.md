@@ -81,6 +81,43 @@ Dieser Plan ist unabhängig von allen anderen und billig. Er nimmt den **Auslös
 
 **Abnahme:** Kein schreibendes Werkzeug vorhanden — Gegenprobe im Katalog. Gegenprobe am **laufenden** Server: `tools/list` enthält die Werkzeuge mit der erwarteten Stufe.
 
+## 🟢 Stand der Umsetzung (2026-08-26)
+
+**Umgesetzt: WP1 und WP2 vollständig, WP-MCP im Kern.** 697/697 Tests grün. Nicht deployt, nicht gepusht.
+
+| Paket | Stand | Nachweis |
+|---|---|---|
+| WP1.1/1.2 Zugriffspfad erkennen | ✅ | `LogScanExclusions.cs` — Abgleich Host **und** Port gegen die Port-Bindings |
+| WP1.3 Manuelle Übersteuerung | ✅ | `SERVERWATCH_SELF_CONTAINERS` unverändert, mit Vorrang |
+| WP1.4 Nur Log-Scan | ✅ | Ausschluss greift in `ScanServerAsync`; Health/Metriken/CVE unberührt |
+| WP2.1 Sichtbar mit Begründung | ✅ *ohne UI* | `Current()` + `get_log_hygiene_report`; die Serveransicht fehlt noch |
+| WP2.2 Kennzahl | ✅ | `whiskers_log_scan_exclusions{server,reason}` auf `/metrics` |
+| WP-MCP.1/.2 | ✅ | `get_log_hygiene_report` (read), im Katalog, `logmonitor` 3 → 4 Werkzeuge |
+| WP3 Log-Inventar, WP4 Behebungsbefehl | ⬜ offen | nächster Schritt |
+
+### Was die Erkennung bewusst NICHT kann
+
+Erkennbar ist nur der **äußerste Sprung** — der Container, mit dem Whiskers tatsächlich spricht. Auf einem
+Host, wo Whiskers einen Tunnel anspricht und der Tunnel einen Socket-Proxy, wird der Tunnel gefunden und der
+Proxy dahinter nicht: In einer Containerliste steht nicht, wer mit wem redet. Das ist keine Lücke, die sich
+mit mehr Mühe schließen ließe, sondern fehlende Information.
+
+Die Gegenmaßnahme ist ehrlich statt raffiniert: Der gefundene Sprung nennt in seiner eigenen Begründung, dass
+ein weiterer Sprung existieren kann und wie man ihn nachträgt (`SERVERWATCH_SELF_CONTAINERS`). Ein Test
+verlangt, dass dieser Hinweis im Text steht — verschwindet er, hat ein Betreiber keine Möglichkeit mehr
+herauszufinden, warum der Proxy weiter gescannt wird.
+
+**Namensabgleich wäre die naheliegende Abkürzung und ist absichtlich nicht gebaut.** Ein Container, der
+zufällig `socket-proxy` heißt, wird weiter gescannt — er gehört jemand anderem, und seine Logs sind echte
+Belege über ein echtes System. Der Test dazu ist die Abnahmebedingung aus WP2.
+
+### Eine Regel wurde beim Bauen fast still verändert
+
+Der erste Entwurf hat den Namensausschluss auf **alle** Hosts ausgeweitet. Bisher galt er nur auf dem Host,
+auf dem Whiskers selbst läuft — genau damit ein gleichnamiger Container auf einem fremden Server weiter
+überwacht wird. Ein Test hat das gefangen; die alte Einschränkung ist wiederhergestellt und jetzt durch einen
+eigenen Test festgehalten, der beim Namen nennt, was er schützt.
+
 ## Reihenfolge und Abhängigkeiten
 
 ```

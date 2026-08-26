@@ -24,6 +24,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     private readonly ILogger<LogMonitorService> _logger;
     private readonly Docker.Budget.IServerBudget _budget;
     private readonly Observability.SelfMetrics.ISelfMetrics _selfMetrics;
+    private readonly Hygiene.ILogScanExclusions _exclusions;
     private readonly ConcurrentDictionary<string, DateTime> _cooldowns = new();
     // Per-container timestamp of the last log check, so we fetch only NEW lines and an old ERROR line
     // doesn't re-alert every cycle. Keyed by "{serverId}:{containerId}" (see CompositeKey): container ids
@@ -86,6 +87,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         ILogger<LogMonitorService> logger,
         Docker.Budget.IServerBudget budget,
         Observability.SelfMetrics.ISelfMetrics selfMetrics,
+        Hygiene.ILogScanExclusions exclusions,
         TimeSpan? logFetchTimeout = null)
     {
         _scopeFactory = scopeFactory;
@@ -95,6 +97,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         _logger = logger;
         _budget = budget;
         _selfMetrics = selfMetrics;
+        _exclusions = exclusions;
         _logFetchTimeout = logFetchTimeout ?? DefaultLogFetchTimeout;
     }
 
@@ -227,12 +230,21 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         var serverId = containers.FirstOrDefault()?.ServerId ?? "?";
         var startedAt = DateTime.UtcNow;
 
+        // Evaluated once per server per cycle rather than per container: the answer depends on the server's
+        // configured access path, not on the container being looked at.
+        var server = _serverConfig.GetServer(serverId);
+        var skipped = server is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : _exclusions.Evaluate(server, containers).Select(e => e.ContainerId).ToHashSet(StringComparer.Ordinal);
+
         foreach (var container in containers)
         {
             if (ct.IsCancellationRequested) break;
 
-            // Never scan our own logs — breaks the self-amplifying alert feedback loop.
-            if (IsSelfContainer(container, selfServerIds)) continue;
+            // Never scan the logs our own traffic writes — our own container (the self-amplifying alert
+            // feedback loop) and the access-path container every Docker call passes through, whose log IS the
+            // record of this scan (Plan-0007 WP1). Health, metrics and CVE keep covering them.
+            if (skipped.Contains(container.Id)) continue;
 
             var applicableRules = rules.Where(r => RuleApplies(r, container)).ToList();
             if (applicableRules.Count == 0) { noRules++; continue; }

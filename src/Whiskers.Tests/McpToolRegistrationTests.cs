@@ -26,7 +26,7 @@ public class McpToolRegistrationTests
     {
         ["all-in-one"]    = 43,   // ContainerTools 12, ServerTools 13, MonitoringTools 4, NetworkTools 5, DatabaseTools 6, LoopSuspensionTools 3
         ["scheduler"]     = 4,
-        ["logmonitor"]    = 3,
+        ["logmonitor"]    = 4,    // LogTools 3, LogHygieneTools 1 (Plan-0007 WP-MCP)
         ["cve"]           = 4,
         ["cloud-control"] = 15,   // CloudTools 8, HetznerTools 7
         ["agent"]         = 1,

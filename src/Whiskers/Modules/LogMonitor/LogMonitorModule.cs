@@ -31,7 +31,7 @@ public sealed class LogMonitorModule : IWhiskersModule
         new NavItem("logs", "Nav_LogSearch", Icons.Material.Filled.Search, "Übersicht", AppRole.Viewer, 40),
     };
 
-    public IReadOnlyList<Type> McpToolTypes { get; } = new[] { typeof(LogTools) };
+    public IReadOnlyList<Type> McpToolTypes { get; } = new[] { typeof(LogTools), typeof(Whiskers.Mcp.Tools.LogHygieneTools) };
 
     public Task InitializeAsync(IServiceProvider sp, CancellationToken ct) => Task.CompletedTask;
 

@@ -105,6 +105,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 | Tool | Level | Description |
 |---|---|---|
 | `create_log_alert` | write | Create a log alert rule that triggers notifications when a pattern is found in container logs. Rules are evaluated on every configured server. |
+| `get_log_hygiene_report` | read | Report which containers the log-alert scan steps over and why. Containers on Whiskers' own Docker access path are skipped because every request Whiskers makes is a line in their log — scanning them means scanning the record of the scan. Excluded containers are still covered by health, metric and CVE monitoring; only their log content is ignored. Read-only: this cannot change what is scanned. |
 | `list_log_alerts` | read | List all configured log alert rules. |
 | `search_logs` | read | Search container logs for a pattern (text or regex). Searches every server unless a serverId is given. Returns matching lines across one or all containers. |
 
@@ -134,7 +135,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 
 | Level | Tools |
 |---|---|
-| read | 38 |
+| read | 39 |
 | write | 33 |
 | admin | 3 |
-| **total** | **74** |
+| **total** | **75** |

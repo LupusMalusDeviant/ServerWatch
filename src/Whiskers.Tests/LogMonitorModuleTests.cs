@@ -35,7 +35,9 @@ public class LogMonitorModuleTests
     [Fact]
     public void Exposes_the_log_mcp_tools()
     {
-        Assert.Equal(new[] { typeof(LogTools) }, new LogMonitorModule().McpToolTypes);
+        Assert.Equal(
+            new[] { typeof(LogTools), typeof(Whiskers.Mcp.Tools.LogHygieneTools) },
+            new LogMonitorModule().McpToolTypes);
     }
 
     [Fact]

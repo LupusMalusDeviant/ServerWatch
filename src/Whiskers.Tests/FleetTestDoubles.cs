@@ -198,3 +198,13 @@ internal sealed class FakeDocker : IDockerService
     public Task DisconnectContainerFromNetworkAsync(string networkId, string containerId, string? serverId = null) => throw new NotSupportedException();
     public Task<(string Output, string Error, int ExitCode)> RunHostShellAsync(string command, string? serverId = null, TimeSpan? timeout = null) => throw new NotSupportedException();
 }
+
+/// <summary>A detector that excludes nothing — for tests about other things. The real one is exercised in
+/// <c>LogScanExclusionTests</c>; wiring it into every log-monitor test would only add noise.</summary>
+internal sealed class NoExclusions : Whiskers.Services.LogMonitor.Hygiene.ILogScanExclusions
+{
+    public IReadOnlyList<Whiskers.Services.LogMonitor.Hygiene.LogScanExclusion> Evaluate(
+        Whiskers.Models.ServerConfig server, IReadOnlyList<Whiskers.Models.ContainerInfo> containers) => [];
+
+    public IReadOnlyList<Whiskers.Services.LogMonitor.Hygiene.LogScanExclusion> Current() => [];
+}

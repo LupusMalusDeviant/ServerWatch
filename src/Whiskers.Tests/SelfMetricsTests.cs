@@ -129,6 +129,7 @@ public sealed class SelfMetricsTests : IDisposable
             NullLogger<LogMonitorService>.Instance,
             TestBudget.Create(),
             metrics,
+            new NoExclusions(),
             timeout);
 
     [Fact]
