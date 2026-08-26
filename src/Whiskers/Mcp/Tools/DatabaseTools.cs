@@ -12,6 +12,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class DatabaseTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Detect the database type of a container. Returns the database engine (PostgreSQL, MySQL, MongoDB, Redis, Neo4j) or 'None'.")]
     public static async Task<string> DetectDatabase(
         IHttpContextAccessor httpContextAccessor,
@@ -36,6 +37,7 @@ public class DatabaseTools
         return $"Database detected:\n  Type: {DatabaseDetector.GetLabel(container.DatabaseType)}\n  Image: {container.Image}\n  User: {creds.User}\n  Database: {creds.Database}\n  Port: {DatabaseDetector.GetDefaultPort(container.DatabaseType)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List all databases in a database container.")]
     public static async Task<string> ListDatabases(
         IHttpContextAccessor httpContextAccessor,
@@ -57,6 +59,7 @@ public class DatabaseTools
             : $"No databases found in {container.Name}.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List tables in a database with row counts and sizes.")]
     public static async Task<string> ListTables(
         IHttpContextAccessor httpContextAccessor,
@@ -80,6 +83,7 @@ public class DatabaseTools
         return $"Tables in {database} ({container.Name}):\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get the schema (columns, types, keys) of a table.")]
     public static async Task<string> GetSchema(
         IHttpContextAccessor httpContextAccessor,
@@ -105,6 +109,7 @@ public class DatabaseTools
         return $"Schema for {table} in {database}:\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Execute a SQL query or database command and return the results.")]
     public static async Task<string> ExecuteQuery(
         IHttpContextAccessor httpContextAccessor,
@@ -145,6 +150,7 @@ public class DatabaseTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Create a database backup (dump) for a database container.")]
     public static async Task<string> BackupDatabase(
         IHttpContextAccessor httpContextAccessor,

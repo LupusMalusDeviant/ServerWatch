@@ -10,6 +10,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class LogTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Search container logs for a pattern (text or regex). Searches every server unless a serverId is given. Returns matching lines across one or all containers.")]
     public static async Task<string> SearchLogs(
         IHttpContextAccessor httpContextAccessor,
@@ -32,6 +33,7 @@ public class LogTools
         return $"Found {results.Count} matches:\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Create a log alert rule that triggers notifications when a pattern is found in container logs. Rules are evaluated on every configured server.")]
     public static async Task<string> CreateLogAlert(
         IHttpContextAccessor httpContextAccessor,
@@ -60,6 +62,7 @@ public class LogTools
         return $"Log alert rule created:\n  Name: {rule.Name}\n  Pattern: {rule.Pattern}\n  Container: {rule.ContainerName ?? "all"}\n  Severity: {rule.Severity}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List all configured log alert rules.")]
     public static async Task<string> ListLogAlerts(
         IHttpContextAccessor httpContextAccessor,

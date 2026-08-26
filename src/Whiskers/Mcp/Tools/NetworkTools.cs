@@ -1,4 +1,5 @@
 using ModelContextProtocol.Server;
+using Whiskers.Models;
 using System.ComponentModel;
 using Whiskers.Services.Docker;
 using Whiskers.Services.Mcp;
@@ -10,6 +11,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class NetworkTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List all Docker networks on a server. Shows name, driver, scope, subnet, and connected containers.")]
     public static async Task<string> ListNetworks(
         IHttpContextAccessor httpContextAccessor,
@@ -34,6 +36,7 @@ public class NetworkTools
         return $"Found {networks.Count} networks on {networks.FirstOrDefault()?.ServerName ?? "local"}:\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Create a new Docker network.")]
     public static async Task<string> CreateNetwork(
         IHttpContextAccessor httpContextAccessor,
@@ -65,6 +68,7 @@ public class NetworkTools
         return $"Network '{name}' created (ID: {id[..12]}, Driver: {driver}).";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Remove a Docker network by name or ID.")]
     public static async Task<string> RemoveNetwork(
         IHttpContextAccessor httpContextAccessor,
@@ -91,6 +95,7 @@ public class NetworkTools
         return $"Network '{networkId}' removed.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Connect a container to a Docker network.")]
     public static async Task<string> ConnectContainerToNetwork(
         IHttpContextAccessor httpContextAccessor,
@@ -107,6 +112,7 @@ public class NetworkTools
         return $"Container '{containerId}' connected to network '{networkId}'.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Disconnect a container from a Docker network.")]
     public static async Task<string> DisconnectContainerFromNetwork(
         IHttpContextAccessor httpContextAccessor,

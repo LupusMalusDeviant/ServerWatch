@@ -1,4 +1,5 @@
 using ModelContextProtocol.Server;
+using Whiskers.Models;
 using System.ComponentModel;
 using Whiskers.Services.Cloud;
 using Whiskers.Services.Cloud.Providers;
@@ -17,6 +18,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class HetznerTools
 {
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Enable Hetzner rescue mode on a server (by Whiskers name or id), then it must be reset to boot into rescue. Returns the temporary root password. Recovery when the OS won't boot.")]
     public static async Task<string> HetznerEnableRescue(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService,
@@ -39,6 +41,7 @@ public class HetznerTools
                $"Temporäres root-Passwort: {resp?.RootPassword ?? "(nicht zurückgegeben)"}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Disable Hetzner rescue mode on a server (by Whiskers name or id).")]
     public static async Task<string> HetznerDisableRescue(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService,
@@ -54,6 +57,7 @@ public class HetznerTools
         return $"Rescue-Mode für {ctx.Value.server.Name} deaktiviert.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Enable Hetzner automated daily backups for a server (by Whiskers name or id). Adds ~20% to the server price.")]
     public static async Task<string> HetznerEnableBackups(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService,
@@ -69,6 +73,7 @@ public class HetznerTools
         return $"Backups für {ctx.Value.server.Name} aktiviert.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Disable Hetzner automated backups for a server (by Whiskers name or id). Existing backups are deleted.")]
     public static async Task<string> HetznerDisableBackups(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService,
@@ -84,6 +89,7 @@ public class HetznerTools
         return $"Backups für {ctx.Value.server.Name} deaktiviert.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Change (resize) a Hetzner server's type, e.g. 'cx32' (by Whiskers name or id). The server must be powered off first. upgradeDisk=true also grows the disk (then a downgrade is no longer possible).")]
     public static async Task<string> HetznerChangeServerType(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService,
@@ -104,6 +110,7 @@ public class HetznerTools
         return $"{ctx.Value.server.Name} wird auf Typ '{serverType}' geändert (Aktion {action?.Status}).";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List Hetzner snapshots in the account of a given Whiskers server (by name or id).")]
     public static async Task<string> HetznerListSnapshots(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService,
@@ -122,6 +129,7 @@ public class HetznerTools
         return $"Snapshots ({images.Count}):\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Delete a Hetzner snapshot/image by its numeric ID, in the account of a given Whiskers server. Irreversible.")]
     public static async Task<string> HetznerDeleteSnapshot(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService,

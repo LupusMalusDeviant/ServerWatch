@@ -14,6 +14,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class ContainerTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List all Docker containers across all configured servers. Returns container name, image, state, health, server, and compose project.")]
     public static async Task<string> ListContainers(
         IHttpContextAccessor httpContextAccessor,
@@ -32,6 +33,7 @@ public class ContainerTools
         return $"Found {containers.Count} containers:\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get detailed information about a specific Docker container including its configuration, ports, labels, and stats.")]
     public static async Task<string> GetContainerDetails(
         IHttpContextAccessor httpContextAccessor,
@@ -71,6 +73,7 @@ public class ContainerTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get logs from a Docker container.")]
     public static async Task<string> GetContainerLogs(
         IHttpContextAccessor httpContextAccessor,
@@ -97,6 +100,7 @@ public class ContainerTools
         return $"Logs for {container?.Name ?? containerId} (last {lines} lines):\n{logs}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Start a stopped Docker container.")]
     public static async Task<string> StartContainer(
         IHttpContextAccessor httpContextAccessor,
@@ -129,6 +133,7 @@ public class ContainerTools
         return $"Container {container?.Name ?? containerId} started.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Stop a running Docker container.")]
     public static async Task<string> StopContainer(
         IHttpContextAccessor httpContextAccessor,
@@ -161,6 +166,7 @@ public class ContainerTools
         return $"Container {container?.Name ?? containerId} stopped.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Restart a Docker container.")]
     public static async Task<string> RestartContainer(
         IHttpContextAccessor httpContextAccessor,
@@ -193,6 +199,7 @@ public class ContainerTools
         return $"Container {container?.Name ?? containerId} restarted.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Pull latest image and recreate a Docker container (update).")]
     public static async Task<string> UpdateContainer(
         IHttpContextAccessor httpContextAccessor,
@@ -231,6 +238,7 @@ public class ContainerTools
         return $"Container updated:\n{string.Join('\n', messages)}\nNew ID: {newId[..12]}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Check which containers have image updates available.")]
     public static async Task<string> GetUpdateStatus(
         IHttpContextAccessor httpContextAccessor,
@@ -252,6 +260,7 @@ public class ContainerTools
         return $"{updates.Count} updates available:\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Admin)]
     [McpServerTool, Description("Deploy a new application on a server using a standardized template. Supports common app types like web apps, databases, and custom Docker images. Creates the container with sensible defaults and starts it.")]
     public static async Task<string> DeployApp(
         IHttpContextAccessor httpContextAccessor,
@@ -335,6 +344,7 @@ public class ContainerTools
         }
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get environment variables of a running Docker container. Sensitive values (keys, secrets, passwords, tokens) are masked for security.")]
     public static async Task<string> GetContainerEnv(
         IHttpContextAccessor httpContextAccessor,
@@ -365,6 +375,7 @@ public class ContainerTools
         return $"Environment variables for {container?.Name ?? containerId}:\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Set environment variables in a container's .env file and restart via docker compose. Only works for containers managed by docker-compose. Provide variables as 'KEY=VALUE' pairs separated by newlines or commas. Existing variables not included are kept unchanged.")]
     public static async Task<string> SetContainerEnv(
         IHttpContextAccessor httpContextAccessor,
@@ -461,6 +472,7 @@ public class ContainerTools
         return $"Updated {changed.Count} variable(s) in {workingDir}/.env and restarted:\n  {string.Join(", ", changed)}\n\n{restartResult.Output}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Admin)]
     [McpServerTool, Description("Deploy an application using a docker-compose.yml content string. Creates and starts all services defined in the compose file.")]
     public static async Task<string> DeployCompose(
         IHttpContextAccessor httpContextAccessor,

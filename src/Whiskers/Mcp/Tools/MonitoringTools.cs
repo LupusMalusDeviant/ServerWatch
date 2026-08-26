@@ -1,4 +1,5 @@
 using ModelContextProtocol.Server;
+using Whiskers.Models;
 using System.ComponentModel;
 using Whiskers.Services.HealthMonitor;
 using Whiskers.Services.Metrics;
@@ -12,6 +13,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class MonitoringTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get a health summary of all containers across all servers.")]
     public static async Task<string> GetHealthSummary(
         IHttpContextAccessor httpContextAccessor,
@@ -52,6 +54,7 @@ public class MonitoringTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get historical CPU/memory metrics for a container over a time period.")]
     public static async Task<string> GetContainerMetrics(
         IHttpContextAccessor httpContextAccessor,
@@ -87,6 +90,7 @@ public class MonitoringTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get historical CPU/memory metrics for a server over a time period.")]
     public static async Task<string> GetServerMetrics(
         IHttpContextAccessor httpContextAccessor,
@@ -118,6 +122,7 @@ public class MonitoringTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get system logs from a server via journalctl. Can filter by service name.")]
     public static async Task<string> GetServerLogs(
         IHttpContextAccessor httpContextAccessor,

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using ModelContextProtocol.Server;
+using Whiskers.Models;
 using Whiskers.Models.Agent;
 using Whiskers.Services.Agent;
 using Whiskers.Services.Agent.Guardrails;
@@ -12,6 +13,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class AgentTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description(
         "Instruct the Whiskers agent to carry out an operations task described in natural language. " +
         "The agent plans and executes using Whiskers's tools, but runs with YOUR permissions and the " +

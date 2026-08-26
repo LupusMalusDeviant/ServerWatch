@@ -1,4 +1,5 @@
 using ModelContextProtocol.Server;
+using Whiskers.Models;
 using System.ComponentModel;
 using System.Text;
 using Whiskers.Services.Cloud;
@@ -15,6 +16,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class CloudTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List all Whiskers servers that have a cloud provider (Hetzner/Hostinger) configured, with their live power status, type, location, IP, and (Hetzner) traffic usage.")]
     public static async Task<string> ListCloudServers(
         IHttpContextAccessor httpContextAccessor,
@@ -38,6 +40,7 @@ public class CloudTools
         return $"Cloud-Server ({servers.Count}):\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get the live cloud status of a Whiskers server (by name or id): provider, power state, type, location, IP, and (Hetzner) traffic usage and backups.")]
     public static async Task<string> CloudStatus(
         IHttpContextAccessor httpContextAccessor,
@@ -70,30 +73,35 @@ public class CloudTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Power on a server (by Whiskers name or id) via its cloud provider.")]
     public static async Task<string> CloudPowerOn(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService, ICloudControlService cloud,
         [Description("Whiskers server name or id")] string server)
         => await Guarded(httpContextAccessor, permissionService, "cloud_power_on", () => cloud.PowerOnAsync(server));
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Gracefully shut down a server (by Whiskers name or id) via its cloud provider.")]
     public static async Task<string> CloudShutdown(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService, ICloudControlService cloud,
         [Description("Whiskers server name or id")] string server)
         => await Guarded(httpContextAccessor, permissionService, "cloud_shutdown", () => cloud.ShutdownAsync(server));
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Gracefully reboot a server (by Whiskers name or id) via its cloud provider.")]
     public static async Task<string> CloudReboot(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService, ICloudControlService cloud,
         [Description("Whiskers server name or id")] string server)
         => await Guarded(httpContextAccessor, permissionService, "cloud_reboot", () => cloud.RebootAsync(server));
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("HARD reset (power-cycle) a server via its cloud provider — forceful, use only when a graceful reboot is impossible (e.g. SSH unresponsive). Hetzner: true power-cycle; Hostinger: falls back to a restart (no hard reset available).")]
     public static async Task<string> CloudHardReset(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService, ICloudControlService cloud,
         [Description("Whiskers server name or id")] string server)
         => await Guarded(httpContextAccessor, permissionService, "cloud_hard_reset", () => cloud.HardResetAsync(server));
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Create a snapshot of a server (by Whiskers name or id) via its cloud provider. Useful before risky changes. Note: Hostinger keeps only ONE snapshot per VM (replaces the previous).")]
     public static async Task<string> CloudCreateSnapshot(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService, ICloudControlService cloud,
@@ -101,6 +109,7 @@ public class CloudTools
         [Description("Optional snapshot description (Hetzner only)")] string? description = null)
         => await Guarded(httpContextAccessor, permissionService, "cloud_create_snapshot", () => cloud.CreateSnapshotAsync(server, description));
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get recent cloud metrics for a server (by Whiskers name or id). Hetzner type: cpu, disk, network. Hostinger returns raw metric data.")]
     public static async Task<string> CloudMetrics(
         IHttpContextAccessor httpContextAccessor, IMcpPermissionService permissionService, ICloudControlService cloud,

@@ -27,7 +27,7 @@ public sealed class VolumeBackupsModule : IWhiskersModule
         new NavItem("backups", "Nav_Backups", Icons.Material.Filled.Backup, "Infrastruktur", AppRole.Viewer, 240),
     };
 
-    public IReadOnlyList<Type> McpToolTypes => Array.Empty<Type>();
+    public IReadOnlyList<Type> McpToolTypes { get; } = new[] { typeof(Whiskers.Mcp.Tools.VolumeBackupTools) };
 
     public Task InitializeAsync(IServiceProvider sp, CancellationToken ct) => Task.CompletedTask;
 

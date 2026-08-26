@@ -51,6 +51,14 @@ public static class McpPermissionLevels
         _ => Read
     };
 
+    /// <summary>The level each tool requires, as the permission check reads it. An unlisted tool resolves to
+    /// <see cref="Admin"/> (fail-closed) — which also means a forgotten entry produces a tool that is registered
+    /// and listed but denied to the agent on every call, silently.
+    ///
+    /// <para>Do not edit this map on its own. The level is <b>declared</b> on the tool method via
+    /// <c>[McpToolLevel]</c>; this dictionary must mirror those declarations exactly. <c>McpToolLevelTests</c>
+    /// compares the two in both directions and fails the build on any drift — including an entry here for a tool
+    /// that no longer exists. Change the attribute, then bring this entry along.</para></summary>
     public static readonly Dictionary<string, string> DefaultToolLevels = new()
     {
         // Read tools
@@ -103,6 +111,13 @@ public static class McpPermissionLevels
         ["search_logs"] = Read,
         ["list_log_alerts"] = Read,
         ["create_log_alert"] = Write,
+
+        // Git deploy / volume backups / alert history — read-only for now (Plan-0013 WP4). Triggering a
+        // deploy, taking or restoring a backup, and sending notifications are deliberately NOT exposed.
+        ["list_git_deploy_apps"] = Read,
+        ["list_volume_backups"] = Read,
+        ["list_volumes"] = Read,
+        ["list_recent_alerts"] = Read,
 
         // Scheduler tools
         ["list_scheduled_tasks"] = Read,
@@ -201,6 +216,10 @@ public static class McpPermissionLevels
         ["renew_ssl_certificate"] = "SSL",
         ["execute_command"] = "Admin",
         ["instruct_agent"] = "Agent",
+        ["list_git_deploy_apps"] = "Git Deploy",
+        ["list_volume_backups"] = "Volume-Backups",
+        ["list_volumes"] = "Volume-Backups",
+        ["list_recent_alerts"] = "Benachrichtigungen",
 
         // Cloud (Hetzner/Hostinger)
         ["list_cloud_servers"] = "Cloud",

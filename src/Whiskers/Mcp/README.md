@@ -13,6 +13,47 @@ Every MCP request carries a `Bearer <API-KEY>` header. The middleware authentica
 | `McpApiKeyAuth.cs` | `McpApiKeyStore`, the API-key store backing authentication. On first run it generates an admin key and writes it to a `0600` `initial-mcp-key.txt` next to `api-keys.json` — **never to the log** (only the file path is logged). The setup wizard will later surface it once and delete the file. |
 | `IMcpApiKeyStore.cs` | Legacy flat API-key store interface (kept for backwards compatibility). |
 | `McpPermissionCheck.cs` | Helper called from inside tool methods: extracts the API key (or the web user's role) from the HTTP context and checks the required permission level. Returns a denial message or `null` if allowed. |
+| `McpToolLevelAttribute.cs` | `[McpToolLevel(...)]` — declares a tool's minimum permission level **on the method**, next to `[McpServerTool]`. A declaration only: the request path still reads `McpPermissionLevels.DefaultToolLevels`. It exists because an unlisted tool falls back to `admin`, so a forgotten dictionary entry yields a tool that is registered and listed but denied to the agent on every call, with nothing logged. |
+| `McpToolLevelCatalog.cs` | Reads those declarations by reflection and shapes them like `DefaultToolLevels` so the two can be compared, plus the method-name → wire-name (snake_case) derivation. Never on the request path — a bug here fails a test, not a request. Feeds the tool-catalog snapshot (Plan-0013 WP3). |
+
+| `McpToolCatalogRenderer.cs` | Renders the tool catalog (name, level, module, description) as the Markdown checked in at [`../../../docs/mcp-tool-catalog.md`](../../../docs/mcp-tool-catalog.md). Deterministic output, so a change to the served surface always shows up as a reviewable diff. |
+
+Enforced by three test classes, each answering a different question:
+
+| Test | Question |
+|---|---|
+| `McpToolLevelTests` | Does every tool declare a level, does it match the dictionary, and does the method's own name reach the permission gate? |
+| `McpToolRegistrationTests` | Does each **module** still contribute the tools it is pinned to? |
+| `McpToolCatalogSnapshotTests` | Did the surface change without the catalog being updated? |
+| `McpServedSurfaceTests` | Does the **running server** answer `tools/list` with exactly those tools? |
+
+The last one is the only one that would have caught the 0.12.0–0.13.0 regression, where the shipped server served zero tools while every code-inspecting check stayed green. Verified by reintroducing that bug: only `McpServedSurfaceTests` went red.
+
+## Two numbers worth looking at now and then
+
+Tests prove the surface is *consistent*. They cannot tell you it is *usable* — that only shows in how the tools
+are actually called. Both numbers come from `McpToolCalls` (see [`../Services/Observability/`](../Services/Observability/)):
+
+```sql
+-- 1. Tools that are always refused. A rate near 100% is not strictness, it is a wrong level:
+--    the tool exists, callers reach for it, and never get through.
+SELECT ToolName,
+       SUM(CASE WHEN Verdict <> 'allow' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS DeniedPct,
+       COUNT(*) AS Calls
+FROM McpToolCalls
+WHERE Timestamp > datetime('now', '-90 days')
+GROUP BY ToolName
+HAVING Calls > 5
+ORDER BY DeniedPct DESC;
+
+-- 2. Tools nobody ever calls. A few are fine; many mean the catalog is bloated or the
+--    descriptions do not say what the tool is for — the agent picks by description.
+SELECT ToolName FROM McpToolCalls
+WHERE Timestamp > datetime('now', '-90 days')
+GROUP BY ToolName;   -- compare against docs/mcp-tool-catalog.md
+```
+
+There is no dedicated view for this yet; it is a periodic manual check.
 
 ## Subfolder
 

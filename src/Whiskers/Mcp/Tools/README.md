@@ -19,7 +19,20 @@ The canonical tool > permission-level map lives in [`../../Models/McpPermission.
 | `CloudTools.cs` | Out-of-band cloud control (provider-agnostic) |
 | `HetznerTools.cs` | Hetzner-specific extras (rescue, backups, snapshots, server type) |
 | `AgentTools.cs` | `instruct_agent`, delegate a natural-language task to the in-process agent |
+| `GitDeployTools.cs` | `list_git_deploy_apps` — repos, branches, last deploy outcome. **Read-only** (Plan-0013 WP4) |
+| `VolumeBackupTools.cs` | `list_volume_backups`, `list_volumes` — answers "when was this volume last backed up?". **Read-only** |
+| `NotificationTools.cs` | `list_recent_alerts` — the alert history Whiskers has raised. **Read-only** |
 | `McpInputValidation.cs` | Boundary input-validation helpers (safe project name, unambiguous container resolution) |
+
+The three read-only groups closed real gaps: their modules contributed no tools at all, so the agent could not
+see deploy outcomes, backup age, or the alerts Whiskers itself had already raised — it re-derived them from raw
+logs or missed them. Their write counterparts are deliberately absent: starting a deploy belongs with GAP-3's
+health check and automatic rollback, restoring a volume overwrites live data, and an agent that can send
+notifications can flood the one channel that has to stay trustworthy.
+
+Every tool declares its permission level via `[McpToolLevel]` and appears in
+[`docs/mcp-tool-catalog.md`](../../../../docs/mcp-tool-catalog.md); both are build-enforced — see
+[`../README.md`](../README.md).
 
 ## Behaviour notes
 

@@ -1,4 +1,5 @@
 using ModelContextProtocol.Server;
+using Whiskers.Models;
 using System.ComponentModel;
 using Whiskers.Services.Docker;
 using Whiskers.Services.Server;
@@ -13,6 +14,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class ServerTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List all configured servers with their connection type and status. Optionally filter by a group or tag (case-insensitive) to narrow a large fleet.")]
     public static async Task<string> ListServers(
         IHttpContextAccessor httpContextAccessor,
@@ -56,6 +58,7 @@ public class ServerTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get detailed system information for a server (OS, CPU, RAM, disk, Docker version, containers).")]
     public static async Task<string> GetServerInfo(
         IHttpContextAccessor httpContextAccessor,
@@ -85,6 +88,7 @@ public class ServerTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Admin)]
     [McpServerTool, Description("Execute a shell command on a server. Use with caution.")]
     public static async Task<string> ExecuteCommand(
         IHttpContextAccessor httpContextAccessor,
@@ -122,6 +126,7 @@ public class ServerTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List firewall (UFW) rules on a server.")]
     public static async Task<string> ListFirewallRules(
         IHttpContextAccessor httpContextAccessor,
@@ -144,6 +149,7 @@ public class ServerTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Add a firewall rule (UFW) to allow or deny traffic on a port.")]
     public static async Task<string> AddFirewallRule(
         IHttpContextAccessor httpContextAccessor,
@@ -180,6 +186,7 @@ public class ServerTools
             : $"Failed: {result.Error}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Remove a firewall rule by its number.")]
     public static async Task<string> RemoveFirewallRule(
         IHttpContextAccessor httpContextAccessor,
@@ -202,6 +209,7 @@ public class ServerTools
         return result.Success ? $"Rule {ruleNumber} removed." : $"Failed: {result.Error}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List Nginx sites (enabled and available) on a server.")]
     public static async Task<string> ListNginxSites(
         IHttpContextAccessor httpContextAccessor,
@@ -219,6 +227,7 @@ public class ServerTools
         return $"Nginx sites:\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get the Nginx configuration for a specific site.")]
     public static async Task<string> GetNginxConfig(
         IHttpContextAccessor httpContextAccessor,
@@ -238,6 +247,7 @@ public class ServerTools
         return $"Nginx config for {siteName}:\n```nginx\n{config}\n```";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Update an Nginx site configuration. Validates with nginx -t before applying.")]
     public static async Task<string> UpdateNginxConfig(
         IHttpContextAccessor httpContextAccessor,
@@ -263,6 +273,7 @@ public class ServerTools
         return result.Success ? $"Nginx config for {siteName} updated and reloaded." : $"Failed: {result.Error}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List systemd services on a server.")]
     public static async Task<string> ListSystemdServices(
         IHttpContextAccessor httpContextAccessor,
@@ -280,6 +291,7 @@ public class ServerTools
         return $"systemd services ({services.Count} total, showing first 50):\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Manage a systemd service (start, stop, restart, enable, disable).")]
     public static async Task<string> ManageSystemdService(
         IHttpContextAccessor httpContextAccessor,
@@ -317,6 +329,7 @@ public class ServerTools
         return result.Success ? $"{serviceName}: {action} succeeded." : $"{serviceName}: {action} failed - {result.Error}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List SSL/TLS certificates managed by certbot on a server.")]
     public static async Task<string> ListSslCertificates(
         IHttpContextAccessor httpContextAccessor,
@@ -338,6 +351,7 @@ public class ServerTools
         return $"SSL certificates:\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Renew an SSL certificate using certbot.")]
     public static async Task<string> RenewSslCertificate(
         IHttpContextAccessor httpContextAccessor,

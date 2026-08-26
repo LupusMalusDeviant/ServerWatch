@@ -12,6 +12,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class SchedulerTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List all scheduled tasks with their status, schedule, and last run info.")]
     public static async Task<string> ListScheduledTasks(
         IHttpContextAccessor httpContextAccessor,
@@ -29,6 +30,7 @@ public class SchedulerTools
         return $"Scheduled tasks ({tasks.Count}):\n{string.Join('\n', lines)}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Create a new scheduled task (e.g., periodic backup, container restart, cleanup).")]
     public static async Task<string> CreateScheduledTask(
         IHttpContextAccessor httpContextAccessor,
@@ -83,6 +85,7 @@ public class SchedulerTools
         return $"Task created:\n  Name: {task.Name}\n  Type: {task.TaskType}\n  Cron: {task.CronExpression}\n  Next run: {task.NextRun?.ToString("g")}";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Delete a scheduled task by its task ID.")]
     public static async Task<string> DeleteScheduledTask(
         IHttpContextAccessor httpContextAccessor,
@@ -101,6 +104,7 @@ public class SchedulerTools
         return $"Task '{taskId}' deleted.";
     }
 
+    [McpToolLevel(McpPermissionLevels.Write)]
     [McpServerTool, Description("Run a scheduled task immediately (outside its normal schedule).")]
     public static async Task<string> RunScheduledTask(
         IHttpContextAccessor httpContextAccessor,

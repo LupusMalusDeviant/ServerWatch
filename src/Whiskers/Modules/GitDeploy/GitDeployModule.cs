@@ -23,7 +23,7 @@ public sealed class GitDeployModule : IWhiskersModule
         new NavItem("git-deploy", "Nav_GitDeploy", Icons.Material.Filled.CloudSync, "Deployment", AppRole.Viewer, 115),
     };
 
-    public IReadOnlyList<Type> McpToolTypes => Array.Empty<Type>();
+    public IReadOnlyList<Type> McpToolTypes { get; } = new[] { typeof(Whiskers.Mcp.Tools.GitDeployTools) };
 
     public Task InitializeAsync(IServiceProvider sp, CancellationToken ct) => Task.CompletedTask;
 

@@ -17,7 +17,8 @@ namespace Whiskers.Modules.Notifications;
 /// <c>INotificationService</c> consumer (CVE, Health, ImageUpdate, AutoUpdate, Metrics, LogMonitor,
 /// AI triggers, approvals) still resolves — no channels are wired, and nothing breaks.
 ///
-/// No sidebar entry (the "Benachrichtigungen" feed nav item stays in Core) and no MCP tools; the Settings
+/// No sidebar entry (the "Benachrichtigungen" feed nav item stays in Core); one read-only MCP tool
+/// (list_recent_alerts, Plan-0013 WP4) — sending notifications is deliberately not exposed. The Settings
 /// panels are hidden via <c>IModuleRegistry.IsEnabled("notifications")</c>.</summary>
 public sealed class NotificationsModule : IWhiskersModule
 {
@@ -26,7 +27,7 @@ public sealed class NotificationsModule : IWhiskersModule
     public bool EnabledByDefault => true;
     public IReadOnlyList<string> DependsOn => Array.Empty<string>();
     public IReadOnlyList<NavItem> NavItems => Array.Empty<NavItem>();
-    public IReadOnlyList<Type> McpToolTypes => Array.Empty<Type>();
+    public IReadOnlyList<Type> McpToolTypes { get; } = new[] { typeof(Whiskers.Mcp.Tools.NotificationTools) };
     public Task InitializeAsync(IServiceProvider sp, CancellationToken ct) => Task.CompletedTask;
 
     public void ConfigureServices(IServiceCollection services, IConfiguration config)

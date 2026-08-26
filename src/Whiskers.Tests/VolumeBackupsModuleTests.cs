@@ -1,13 +1,14 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Whiskers.Mcp.Tools;
 using Whiskers.Modules;
 using Whiskers.Modules.VolumeBackups;
 using Whiskers.Services.Backup;
 
 namespace Whiskers.Tests;
 
-/// <summary>RoadToSAP Phase 1 — the VolumeBackups module move. Covers the module metadata (nav "backups", no
-/// MCP tools), the registration, the ModuleCatalog gate, and the soft-dependency no-op: the Scheduler module's
+/// <summary>RoadToSAP Phase 1 — the VolumeBackups module move. Covers the module metadata (nav "backups", its
+/// read-only MCP tools since Plan-0013 WP4), the registration, the ModuleCatalog gate, and the soft-dependency no-op: the Scheduler module's
 /// TaskExecutor consumes IVolumeBackupService, so a NoopVolumeBackupService default must resolve when this
 /// module is off and be overridden by the real service when on. Crucially the no-op must NOT fake a successful
 /// backup — its mutating operations throw so a scheduled VolumeBackup task records a visible failure.</summary>
@@ -21,14 +22,19 @@ public class VolumeBackupsModuleTests
     // --- Module metadata ---------------------------------------------------------------------------------
 
     [Fact]
-    public void Contributes_the_backups_nav_entry_and_no_tools()
+    public void Contributes_the_backups_nav_entry_and_its_read_only_tools()
     {
         var module = new VolumeBackupsModule();
         var nav = Assert.Single(module.NavItems);
         Assert.Equal("backups", nav.Href);
         Assert.Equal("Infrastruktur", nav.Group);
         Assert.Equal(240, nav.Order);
-        Assert.Empty(module.McpToolTypes);
+
+        // Plan-0013 WP4: the module used to contribute no tools at all, so the agent could not answer
+        // "when was this volume last backed up?". Read-only by design — taking and especially restoring a
+        // backup stay out of the agent's reach until that is decided deliberately.
+        Assert.Equal(new[] { typeof(VolumeBackupTools) }, module.McpToolTypes);
+        Assert.DoesNotContain(typeof(VolumeBackupTools), new AllInOnePseudoModule().McpToolTypes);
     }
 
     [Fact]

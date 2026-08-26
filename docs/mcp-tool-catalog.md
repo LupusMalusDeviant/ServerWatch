@@ -1,0 +1,137 @@
+# MCP tool catalog
+
+The tools this Whiskers build serves over MCP, with the permission level each one requires.
+A level is declared on the tool method via `[McpToolLevel]`; the request path enforces it through
+`McpPermissionLevels.DefaultToolLevels`, and tests keep the two identical.
+
+**This file is generated.** Do not edit it by hand — change the tools, then regenerate.
+`McpToolCatalogSnapshotTests` fails the build whenever it drifts from the code, so a change to the
+served surface is always a deliberate, reviewable diff.
+
+Tools of a disabled module are not served. `read` < `write` < `admin`; a caller's key level must
+reach the tool's level, and the in-process agent is additionally capped by its trigger.
+
+## Module `agent`
+
+| Tool | Level | Description |
+|---|---|---|
+| `instruct_agent` | read | Instruct the Whiskers agent to carry out an operations task described in natural language. The agent plans and executes using Whiskers's tools, but runs with YOUR permissions and the configured guardrails — it can never exceed your rights or bypass the guardrails. Returns the agent's final answer plus a short log of the tools it ran. |
+
+## Module `all-in-one`
+
+| Tool | Level | Description |
+|---|---|---|
+| `add_firewall_rule` | write | Add a firewall rule (UFW) to allow or deny traffic on a port. |
+| `backup_database` | write | Create a database backup (dump) for a database container. |
+| `connect_container_to_network` | write | Connect a container to a Docker network. |
+| `create_network` | write | Create a new Docker network. |
+| `deploy_app` | admin | Deploy a new application on a server using a standardized template. Supports common app types like web apps, databases, and custom Docker images. Creates the container with sensible defaults and starts it. |
+| `deploy_compose` | admin | Deploy an application using a docker-compose.yml content string. Creates and starts all services defined in the compose file. |
+| `detect_database` | read | Detect the database type of a container. Returns the database engine (PostgreSQL, MySQL, MongoDB, Redis, Neo4j) or 'None'. |
+| `disconnect_container_from_network` | write | Disconnect a container from a Docker network. |
+| `execute_command` | admin | Execute a shell command on a server. Use with caution. |
+| `execute_query` | write | Execute a SQL query or database command and return the results. |
+| `get_container_details` | read | Get detailed information about a specific Docker container including its configuration, ports, labels, and stats. |
+| `get_container_env` | read | Get environment variables of a running Docker container. Sensitive values (keys, secrets, passwords, tokens) are masked for security. |
+| `get_container_logs` | read | Get logs from a Docker container. |
+| `get_container_metrics` | read | Get historical CPU/memory metrics for a container over a time period. |
+| `get_health_summary` | read | Get a health summary of all containers across all servers. |
+| `get_nginx_config` | read | Get the Nginx configuration for a specific site. |
+| `get_schema` | read | Get the schema (columns, types, keys) of a table. |
+| `get_server_info` | read | Get detailed system information for a server (OS, CPU, RAM, disk, Docker version, containers). |
+| `get_server_logs` | read | Get system logs from a server via journalctl. Can filter by service name. |
+| `get_server_metrics` | read | Get historical CPU/memory metrics for a server over a time period. |
+| `get_update_status` | read | Check which containers have image updates available. |
+| `list_containers` | read | List all Docker containers across all configured servers. Returns container name, image, state, health, server, and compose project. |
+| `list_databases` | read | List all databases in a database container. |
+| `list_firewall_rules` | read | List firewall (UFW) rules on a server. |
+| `list_networks` | read | List all Docker networks on a server. Shows name, driver, scope, subnet, and connected containers. |
+| `list_nginx_sites` | read | List Nginx sites (enabled and available) on a server. |
+| `list_servers` | read | List all configured servers with their connection type and status. Optionally filter by a group or tag (case-insensitive) to narrow a large fleet. |
+| `list_ssl_certificates` | read | List SSL/TLS certificates managed by certbot on a server. |
+| `list_systemd_services` | read | List systemd services on a server. |
+| `list_tables` | read | List tables in a database with row counts and sizes. |
+| `manage_systemd_service` | write | Manage a systemd service (start, stop, restart, enable, disable). |
+| `remove_firewall_rule` | write | Remove a firewall rule by its number. |
+| `remove_network` | write | Remove a Docker network by name or ID. |
+| `renew_ssl_certificate` | write | Renew an SSL certificate using certbot. |
+| `restart_container` | write | Restart a Docker container. |
+| `set_container_env` | write | Set environment variables in a container's .env file and restart via docker compose. Only works for containers managed by docker-compose. Provide variables as 'KEY=VALUE' pairs separated by newlines or commas. Existing variables not included are kept unchanged. |
+| `start_container` | write | Start a stopped Docker container. |
+| `stop_container` | write | Stop a running Docker container. |
+| `update_container` | write | Pull latest image and recreate a Docker container (update). |
+| `update_nginx_config` | write | Update an Nginx site configuration. Validates with nginx -t before applying. |
+
+## Module `cloud-control`
+
+| Tool | Level | Description |
+|---|---|---|
+| `cloud_create_snapshot` | write | Create a snapshot of a server (by Whiskers name or id) via its cloud provider. Useful before risky changes. Note: Hostinger keeps only ONE snapshot per VM (replaces the previous). |
+| `cloud_hard_reset` | write | HARD reset (power-cycle) a server via its cloud provider — forceful, use only when a graceful reboot is impossible (e.g. SSH unresponsive). Hetzner: true power-cycle; Hostinger: falls back to a restart (no hard reset available). |
+| `cloud_metrics` | read | Get recent cloud metrics for a server (by Whiskers name or id). Hetzner type: cpu, disk, network. Hostinger returns raw metric data. |
+| `cloud_power_on` | write | Power on a server (by Whiskers name or id) via its cloud provider. |
+| `cloud_reboot` | write | Gracefully reboot a server (by Whiskers name or id) via its cloud provider. |
+| `cloud_shutdown` | write | Gracefully shut down a server (by Whiskers name or id) via its cloud provider. |
+| `cloud_status` | read | Get the live cloud status of a Whiskers server (by name or id): provider, power state, type, location, IP, and (Hetzner) traffic usage and backups. |
+| `hetzner_change_server_type` | write | Change (resize) a Hetzner server's type, e.g. 'cx32' (by Whiskers name or id). The server must be powered off first. upgradeDisk=true also grows the disk (then a downgrade is no longer possible). |
+| `hetzner_delete_snapshot` | write | Delete a Hetzner snapshot/image by its numeric ID, in the account of a given Whiskers server. Irreversible. |
+| `hetzner_disable_backups` | write | Disable Hetzner automated backups for a server (by Whiskers name or id). Existing backups are deleted. |
+| `hetzner_disable_rescue` | write | Disable Hetzner rescue mode on a server (by Whiskers name or id). |
+| `hetzner_enable_backups` | write | Enable Hetzner automated daily backups for a server (by Whiskers name or id). Adds ~20% to the server price. |
+| `hetzner_enable_rescue` | write | Enable Hetzner rescue mode on a server (by Whiskers name or id), then it must be reset to boot into rescue. Returns the temporary root password. Recovery when the OS won't boot. |
+| `hetzner_list_snapshots` | read | List Hetzner snapshots in the account of a given Whiskers server (by name or id). |
+| `list_cloud_servers` | read | List all Whiskers servers that have a cloud provider (Hetzner/Hostinger) configured, with their live power status, type, location, IP, and (Hetzner) traffic usage. |
+
+## Module `cve`
+
+| Tool | Level | Description |
+|---|---|---|
+| `get_container_cves` | read | Get the CVE findings for a specific container image on a server. |
+| `get_cve_summary` | read | Get a CVE summary across all servers: per-server counts of CVE findings (OS + all containers) broken down by severity. |
+| `get_server_cves` | read | Get the CVE findings for the host OS on one server (pending security updates and the CVE IDs they address). |
+| `list_cve_groups` | read | List DE-DUPLICATED CVEs across the whole fleet: one entry per CVE-ID with every affected server/container behind it, how long it has been open, and whether a fix exists. Use this instead of the per-target tools to avoid duplicate CVEs. |
+
+## Module `gitdeploy`
+
+| Tool | Level | Description |
+|---|---|---|
+| `list_git_deploy_apps` | read | List the applications Whiskers deploys from Git: repository, branch, compose path, target server, and the outcome, time and commit of the last deploy. Read-only — this cannot start a deploy. |
+
+## Module `logmonitor`
+
+| Tool | Level | Description |
+|---|---|---|
+| `create_log_alert` | write | Create a log alert rule that triggers notifications when a pattern is found in container logs. Rules are evaluated on every configured server. |
+| `list_log_alerts` | read | List all configured log alert rules. |
+| `search_logs` | read | Search container logs for a pattern (text or regex). Searches every server unless a serverId is given. Returns matching lines across one or all containers. |
+
+## Module `notifications`
+
+| Tool | Level | Description |
+|---|---|---|
+| `list_recent_alerts` | read | List the alerts and events Whiskers has raised recently (container down, restart loops, log-alert hits, CVE findings, agent actions), newest first. Optionally filter by severity or event type. Read-only — this cannot send notifications. |
+
+## Module `scheduler`
+
+| Tool | Level | Description |
+|---|---|---|
+| `create_scheduled_task` | write | Create a new scheduled task (e.g., periodic backup, container restart, cleanup). |
+| `delete_scheduled_task` | write | Delete a scheduled task by its task ID. |
+| `list_scheduled_tasks` | read | List all scheduled tasks with their status, schedule, and last run info. |
+| `run_scheduled_task` | write | Run a scheduled task immediately (outside its normal schedule). |
+
+## Module `volumebackups`
+
+| Tool | Level | Description |
+|---|---|---|
+| `list_volume_backups` | read | List the Docker volume backups Whiskers has taken: volume, owning container, server, size and age. Answers 'when was this volume last backed up?'. Read-only — this cannot create or restore a backup. |
+| `list_volumes` | read | List the Docker volumes on a server, so a backup gap can be spotted by comparing this against list_volume_backups. Read-only. |
+
+## Totals
+
+| Level | Tools |
+|---|---|
+| read | 37 |
+| write | 31 |
+| admin | 3 |
+| **total** | **71** |

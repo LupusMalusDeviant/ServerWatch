@@ -1,4 +1,5 @@
 using ModelContextProtocol.Server;
+using Whiskers.Models;
 using System.ComponentModel;
 using Microsoft.AspNetCore.Http;
 using Whiskers.Models.Cve;
@@ -11,6 +12,7 @@ namespace Whiskers.Mcp.Tools;
 [McpServerToolType]
 public class CveTools
 {
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get a CVE summary across all servers: per-server counts of CVE findings (OS + all containers) broken down by severity.")]
     public static string GetCveSummary(
         IHttpContextAccessor httpContextAccessor,
@@ -43,6 +45,7 @@ public class CveTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("List DE-DUPLICATED CVEs across the whole fleet: one entry per CVE-ID with every affected server/container behind it, how long it has been open, and whether a fix exists. Use this instead of the per-target tools to avoid duplicate CVEs.")]
     public static async Task<string> ListCveGroups(
         IHttpContextAccessor httpContextAccessor,
@@ -84,6 +87,7 @@ public class CveTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get the CVE findings for the host OS on one server (pending security updates and the CVE IDs they address).")]
     public static string GetServerCves(
         IHttpContextAccessor httpContextAccessor,
@@ -120,6 +124,7 @@ public class CveTools
         return sb.ToString();
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Get the CVE findings for a specific container image on a server.")]
     public static string GetContainerCves(
         IHttpContextAccessor httpContextAccessor,
