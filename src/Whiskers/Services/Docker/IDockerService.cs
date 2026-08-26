@@ -4,7 +4,7 @@ namespace Whiskers.Services.Docker;
 
 public interface IDockerService
 {
-    Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null);
+    Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null, CancellationToken ct = default);
     Task<IList<ContainerInfo>> ListAllContainersAsync(bool all = true);
 
     /// <summary>Fleet-wide list PLUS which servers answered. Callers that keep per-server state across
@@ -17,11 +17,11 @@ public interface IDockerService
     Task StopContainerAsync(string containerId, string? serverId = null);
     Task RestartContainerAsync(string containerId, string? serverId = null);
     Task RemoveContainerAsync(string containerId, bool force = false, string? serverId = null);
-    Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null);
+    Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null, CancellationToken ct = default);
     Task<string> CreateContainerAsync(DeploymentRequest request, string? serverId = null);
     Task PullImageAsync(string imageName, IProgress<string>? progress = null, string? serverId = null);
     Task<(string State, int ExitCode, bool OomKilled)> InspectContainerStateAsync(string containerId, string? serverId = null);
-    Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null);
+    Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null, CancellationToken ct = default);
     Task<Dictionary<string, ServerSystemInfo>> GetAllServerSystemInfoAsync();
     Task<string?> GetImageDigestAsync(string imageRef, string? serverId = null);
     Task<string> RecreateContainerAsync(string containerId, string? serverId = null, IProgress<string>? progress = null);

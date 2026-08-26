@@ -22,6 +22,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     private readonly IServerConfigService _serverConfig;
     private readonly INotificationService _notifications;
     private readonly ILogger<LogMonitorService> _logger;
+    private readonly Docker.Budget.IServerBudget _budget;
     private readonly ConcurrentDictionary<string, DateTime> _cooldowns = new();
     // Per-container timestamp of the last log check, so we fetch only NEW lines and an old ERROR line
     // doesn't re-alert every cycle. Keyed by "{serverId}:{containerId}" (see CompositeKey): container ids
@@ -32,7 +33,12 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
 
     // A single wedged Docker connection must not stall the cycle forever: hosts are scanned in parallel,
     // but an unbounded fetch would still hold its own chain — and with it the start of the next cycle.
-    private static readonly TimeSpan LogFetchTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan DefaultLogFetchTimeout = TimeSpan.FromSeconds(15);
+
+    // Instance field only so a test can drive many cycles against a deliberately slow backend without
+    // waiting 15 seconds each time. Production behaviour is unchanged: the constructor defaults to
+    // DefaultLogFetchTimeout, and nothing outside the tests passes anything else.
+    private readonly TimeSpan _logFetchTimeout;
 
     // Lines fetched per container per cycle. Since the Docker call now caps the transfer even with a
     // `since` filter, this is the real ceiling on how much of a burst we can still match in one cycle.
@@ -54,13 +60,17 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         IDockerService docker,
         IServerConfigService serverConfig,
         INotificationService notifications,
-        ILogger<LogMonitorService> logger)
+        ILogger<LogMonitorService> logger,
+        Docker.Budget.IServerBudget budget,
+        TimeSpan? logFetchTimeout = null)
     {
         _scopeFactory = scopeFactory;
         _docker = docker;
         _serverConfig = serverConfig;
         _notifications = notifications;
         _logger = logger;
+        _budget = budget;
+        _logFetchTimeout = logFetchTimeout ?? DefaultLogFetchTimeout;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -72,8 +82,9 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         {
             try
             {
-                // WaitAsync bounds the cycle to shutdown: per-container log fetches carry no token, so
-                // abandon an in-flight cycle on stop rather than block the host's shutdown window.
+                // The token now reaches the Docker calls themselves, so a stop ends the in-flight fetches
+                // rather than merely abandoning them. WaitAsync stays as the backstop that bounds the cycle
+                // even if some future step forgets to honour the token.
                 await RunScanCycleAsync(stoppingToken).WaitAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -89,6 +100,9 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     /// without the hosted-service loop (same test seam idea as ContainerHealthMonitor.IsRestart).</summary>
     public async Task RunScanCycleAsync(CancellationToken ct)
     {
+        // Everything this cycle does is background work: it shares the background lane of the per-server
+        // budget with the other loops and must never take slots from a waiting human (Plan-0001 WP3).
+        using var background = _budget.BackgroundScope();
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MetricsDbContext>();
 
@@ -199,7 +213,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
                 // is caught by the rule cooldown; a line lost is lost for good.
                 var fetchedAt = DateTime.UtcNow;
                 var since = _lastLogCheck.TryGetValue(key, out var last) ? last : fetchedAt;
-                var logs = await FetchLogsAsync(container, since);
+                var logs = await FetchLogsAsync(container, since, ct);
                 _lastLogCheck[key] = fetchedAt;
                 var lines = logs.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
@@ -253,22 +267,31 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
             containers.FirstOrDefault()?.ServerName ?? "?", scanned, noRules, failed, containers.Count);
     }
 
-    /// <summary>Fetches a container's new log lines, bounded by <see cref="LogFetchTimeout"/>: the Docker
-    /// log call carries no cancellation token, so a dead connection would otherwise hang this server's
-    /// chain indefinitely.</summary>
-    private async Task<string> FetchLogsAsync(ContainerInfo container, DateTime since)
+    /// <summary>Fetches a container's new log lines, bounded by <see cref="DefaultLogFetchTimeout"/>.
+    ///
+    /// <para>The bound is a linked <see cref="CancellationTokenSource"/>, not a race against a timer. The
+    /// earlier <c>Task.WhenAny(fetch, Task.Delay(...))</c> ended the <em>wait</em> and left the <em>request</em>
+    /// running: dockerd kept reading the log file until the proxy cut the connection 600 seconds later, while
+    /// a new fetch started every cycle. Ten concurrent full-log scans per container was the stable end state —
+    /// 184% of 200% CPU for six days (incident 2026-08-26). Cancelling the token instead ends the request on
+    /// the server as well, which is the whole point.</para></summary>
+    private async Task<string> FetchLogsAsync(ContainerInfo container, DateTime since, CancellationToken ct)
     {
-        var fetch = _docker.GetContainerLogsAsync(container.Id, TailLines, container.ServerId, since);
-        if (await Task.WhenAny(fetch, Task.Delay(LogFetchTimeout)) != fetch)
+        using var fetchTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        fetchTimeout.CancelAfter(_logFetchTimeout);
+
+        try
         {
-            // Observe a later fault so it isn't an unobserved exception, then degrade.
-            _ = fetch.ContinueWith(t => { _ = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
-            _logger.LogWarning("Fetching logs for {Container} on {Server} timed out after {Timeout}s — skipped this cycle",
-                container.Name, container.ServerName, LogFetchTimeout.TotalSeconds);
+            return await _docker.GetContainerLogsAsync(container.Id, TailLines, container.ServerId, since, fetchTimeout.Token);
+        }
+        // Only OUR timeout is turned into a failure for this container. A cancelled shutdown token belongs to
+        // the caller and must keep propagating, or a stop would look like a fleet of broken containers.
+        catch (OperationCanceledException) when (fetchTimeout.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Log fetch for {Container} on {Server} aborted after {Timeout}s — request cancelled on the server, not just abandoned here",
+                container.Name, container.ServerName, _logFetchTimeout.TotalSeconds);
             throw new TimeoutException($"Log fetch for {container.Name} on {container.ServerName} timed out.");
         }
-
-        return await fetch;
     }
 
     /// <summary>Identifies a container across the fleet. Container ids are unique per host only, so every

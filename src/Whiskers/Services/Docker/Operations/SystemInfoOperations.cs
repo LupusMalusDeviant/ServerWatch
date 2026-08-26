@@ -39,7 +39,7 @@ internal sealed class SystemInfoOperations
     private async Task<DockerClient> GetClient(string? serverId)
         => await _connectionManager.GetClientAsync(serverId);
 
-    public async Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null)
+    public async Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null, CancellationToken ct = default)
     {
         var server = serverId != null
             ? _serverConfigService.GetServer(serverId)
@@ -147,21 +147,24 @@ internal sealed class SystemInfoOperations
         var perServerTimeout = TimeSpan.FromSeconds(8);
         var tasks = servers.Select(async s =>
         {
-            var infoTask = GetServerSystemInfoAsync(s.Id);
-            var winner = await Task.WhenAny(infoTask, Task.Delay(perServerTimeout));
-            if (winner == infoTask)
-                return (s.Id, info: await infoTask);
-
-            _ = infoTask.ContinueWith(t => { _ = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
-            _logger.LogWarning("System info for server {ServerName} timed out ({Timeout}s) — marking unreachable (degraded view).",
-                s.Name, perServerTimeout.TotalSeconds);
-            return (s.Id, info: new ServerSystemInfo
+            // Cancel rather than abandon — see ContainerOperations.ListAllContainersDetailedAsync.
+            using var timeout = new CancellationTokenSource(perServerTimeout);
+            try
             {
-                ServerId = s.Id,
-                ServerName = s.Name,
-                IsReachable = false,
-                Error = $"Timed out after {perServerTimeout.TotalSeconds:0}s"
-            });
+                return (s.Id, info: await GetServerSystemInfoAsync(s.Id, timeout.Token));
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                _logger.LogWarning("System info for server {ServerName} aborted after {Timeout}s — marking unreachable (degraded view).",
+                    s.Name, perServerTimeout.TotalSeconds);
+                return (s.Id, info: new ServerSystemInfo
+                {
+                    ServerId = s.Id,
+                    ServerName = s.Name,
+                    IsReachable = false,
+                    Error = $"Timed out after {perServerTimeout.TotalSeconds:0}s"
+                });
+            }
         });
 
         var results = await Task.WhenAll(tasks);

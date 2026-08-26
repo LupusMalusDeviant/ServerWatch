@@ -1,0 +1,178 @@
+using System.Collections.Concurrent;
+using Microsoft.Extensions.Options;
+using Whiskers.Configuration;
+using Whiskers.Models;
+using Whiskers.Services.Notifications;
+using Whiskers.Services.ServerConfig;
+
+namespace Whiskers.Services.Docker.Budget;
+
+/// <summary>
+/// Per-server circuit breaker (Plan-0001 WP4). Closed → Open after a run of transport failures → HalfOpen
+/// after a cooldown, one probe → Closed on success.
+///
+/// <para>Resolves <see cref="INotificationService"/> lazily from the root provider rather than taking it in
+/// the constructor: the notification composite sits far above the Docker layer, and a direct dependency here
+/// would tie the two together at startup. Same reason <c>AiTriggerDispatcher</c> does it.</para>
+/// </summary>
+public sealed class ServerCircuitBreaker : IServerCircuitBreaker
+{
+    private sealed class Circuit
+    {
+        public readonly object Gate = new();
+        public ServerCircuitState State = ServerCircuitState.Closed;
+        public int ConsecutiveFailures;
+        public DateTime? OpenedAt;
+        public string? LastReason;
+        public bool ProbeInFlight;
+    }
+
+    private readonly ConcurrentDictionary<string, Circuit> _circuits = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IOptionsMonitor<ServerBudgetSettings> _settings;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<ServerCircuitBreaker> _logger;
+
+    public ServerCircuitBreaker(
+        IOptionsMonitor<ServerBudgetSettings> settings,
+        IServiceProvider serviceProvider,
+        ILogger<ServerCircuitBreaker> logger)
+    {
+        _settings = settings;
+        _serviceProvider = serviceProvider;
+        _logger = logger;
+    }
+
+    public void ThrowIfOpen(string serverId)
+    {
+        var c = _circuits.GetOrAdd(serverId, _ => new Circuit());
+        var cooldown = TimeSpan.FromSeconds(Math.Max(1, _settings.CurrentValue.CircuitCooldownSeconds));
+
+        lock (c.Gate)
+        {
+            if (c.State == ServerCircuitState.Closed) return;
+
+            if (c.State == ServerCircuitState.Open)
+            {
+                if (c.OpenedAt is { } opened && DateTime.UtcNow - opened >= cooldown)
+                {
+                    // Cooldown elapsed: promote to half-open and let THIS caller be the probe.
+                    c.State = ServerCircuitState.HalfOpen;
+                    c.ProbeInFlight = true;
+                    _logger.LogInformation("Circuit for server {ServerId} half-open — letting one probe through", serverId);
+                    return;
+                }
+                throw new ServerCircuitOpenException(serverId, c.LastReason);
+            }
+
+            // HalfOpen: exactly one probe at a time, everyone else keeps failing fast.
+            if (c.ProbeInFlight) throw new ServerCircuitOpenException(serverId, c.LastReason);
+            c.ProbeInFlight = true;
+        }
+    }
+
+    public void RecordSuccess(string serverId)
+    {
+        var c = _circuits.GetOrAdd(serverId, _ => new Circuit());
+        bool reopened;
+
+        lock (c.Gate)
+        {
+            c.ProbeInFlight = false;
+            c.ConsecutiveFailures = 0;
+            reopened = c.State != ServerCircuitState.Closed;
+            if (!reopened) return;
+
+            c.State = ServerCircuitState.Closed;
+            c.OpenedAt = null;
+            c.LastReason = null;
+        }
+
+        _logger.LogInformation("Circuit for server {ServerId} closed — calls resumed", serverId);
+        Announce(serverId, "server_throttling_ended", "Whiskers resumed its calls to this server after it answered again.");
+    }
+
+    public void RecordFailure(string serverId, Exception exception)
+    {
+        // A circuit that opens on application-level errors would trip on a healthy host — only transport
+        // failures and our own timeouts say anything about reachability.
+        if (!IsHealthSignal(exception)) return;
+
+        var c = _circuits.GetOrAdd(serverId, _ => new Circuit());
+        var threshold = Math.Max(1, _settings.CurrentValue.CircuitFailureThreshold);
+        bool justOpened;
+        int failures;
+
+        lock (c.Gate)
+        {
+            c.ProbeInFlight = false;
+            failures = ++c.ConsecutiveFailures;
+            // ONLY the step out of Closed is news. Coming from HalfOpen means the probe failed, which is the
+            // circuit doing its job — announcing that again would send a second "server throttled" for a
+            // server everyone already knows is throttled, every cooldown, for as long as it stays down.
+            justOpened = c.State == ServerCircuitState.Closed && failures >= threshold;
+
+            if (justOpened)
+            {
+                c.State = ServerCircuitState.Open;
+                c.OpenedAt = DateTime.UtcNow;
+                c.LastReason = exception.GetType().Name + ": " + exception.Message;
+            }
+            else if (c.State == ServerCircuitState.HalfOpen)
+            {
+                // The probe failed — back to open, and restart the cooldown.
+                c.State = ServerCircuitState.Open;
+                c.OpenedAt = DateTime.UtcNow;
+            }
+        }
+
+        if (!justOpened) return;
+
+        var cooldown = Math.Max(1, _settings.CurrentValue.CircuitCooldownSeconds);
+        _logger.LogWarning("Circuit for server {ServerId} OPEN after {Failures} consecutive failures — pausing calls for {Cooldown}s",
+            serverId, failures, cooldown);
+        Announce(serverId, "server_throttled",
+            $"{failures} calls in a row failed. Whiskers is pausing its own requests to this server for {cooldown}s " +
+            "and will retry with a single probe. This is Whiskers throttling itself — the server is not being checked while it lasts.");
+    }
+
+    public ServerCircuitSnapshot Snapshot(string serverId)
+    {
+        var c = _circuits.GetOrAdd(serverId, _ => new Circuit());
+        lock (c.Gate)
+            return new ServerCircuitSnapshot(serverId, c.State, c.ConsecutiveFailures, c.OpenedAt, c.LastReason);
+    }
+
+    public IReadOnlyList<ServerCircuitSnapshot> SnapshotAll() =>
+        _circuits.Keys.Select(Snapshot).OrderBy(s => s.ServerId, StringComparer.Ordinal).ToList();
+
+    /// <summary>Transport-level failures and our own timeouts. Everything else is the server answering.</summary>
+    private static bool IsHealthSignal(Exception ex) =>
+        ex is TimeoutException or OperationCanceledException || DockerConnectionManager.IsConnectionFailure(ex);
+
+    /// <summary>Reports a transition. Never lets a notification failure break the Docker path — the circuit's
+    /// job is to protect the server, and it must keep doing that even if no channel is reachable.</summary>
+    private void Announce(string serverId, string eventType, string detail)
+    {
+        try
+        {
+            var notifications = _serviceProvider.GetService<INotificationService>();
+            if (notifications is null) return;
+
+            var name = _serviceProvider.GetService<IServerConfigService>()?.GetServer(serverId)?.Name ?? serverId;
+
+            _ = notifications.SendAsync(new NotificationEvent
+            {
+                EventType = eventType,
+                ServerId = serverId,
+                ServerName = name,
+                ContainerName = name,
+                ImageInfo = detail,
+                Timestamp = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not announce the circuit change for server {ServerId}", serverId);
+        }
+    }
+}

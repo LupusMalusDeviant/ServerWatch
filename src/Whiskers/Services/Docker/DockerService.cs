@@ -44,8 +44,8 @@ public class DockerService : IDockerService
 
     // === Containers ===
 
-    public Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null)
-        => _containers.ListContainersAsync(all, serverId);
+    public Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null, CancellationToken ct = default)
+        => _containers.ListContainersAsync(all, serverId, ct);
 
     public Task<IList<ContainerInfo>> ListAllContainersAsync(bool all = true)
         => _containers.ListAllContainersAsync(all);
@@ -71,8 +71,8 @@ public class DockerService : IDockerService
     public Task RemoveContainerAsync(string containerId, bool force = false, string? serverId = null)
         => _containers.RemoveContainerAsync(containerId, force, serverId);
 
-    public Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null)
-        => _containers.GetContainerLogsAsync(containerId, tailLines, serverId, since);
+    public Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null, CancellationToken ct = default)
+        => _containers.GetContainerLogsAsync(containerId, tailLines, serverId, since, ct);
 
     public Task<(string State, int ExitCode, bool OomKilled)> InspectContainerStateAsync(string containerId, string? serverId = null)
         => _containers.InspectContainerStateAsync(containerId, serverId);
@@ -126,8 +126,8 @@ public class DockerService : IDockerService
 
     // === System info ===
 
-    public Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null)
-        => _systemInfo.GetServerSystemInfoAsync(serverId);
+    public Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null, CancellationToken ct = default)
+        => _systemInfo.GetServerSystemInfoAsync(serverId, ct);
 
     public Task<Dictionary<string, ServerSystemInfo>> GetAllServerSystemInfoAsync()
         => _systemInfo.GetAllServerSystemInfoAsync();

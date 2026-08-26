@@ -69,7 +69,7 @@ public sealed class LogMonitorMultiServerTests : IDisposable
 
     private LogMonitorService Monitor(FakeDocker docker, FakeNotifications notifications, FakeServerConfig servers) =>
         new(_sp.GetRequiredService<IServiceScopeFactory>(), docker, servers, notifications,
-            NullLogger<LogMonitorService>.Instance);
+            NullLogger<LogMonitorService>.Instance, TestBudget.Create());
 
     private static FakeServerConfig TwoServers() => new(
         new Whiskers.Models.ServerConfig { Id = "local", Name = "Badwolf (local)", ConnectionType = ConnectionType.Local, IsDefault = true },

@@ -21,13 +21,20 @@ public class DockerConnectionManager : IDockerConnectionManager
     // ssh processes and waste local ports.
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
 
+    private readonly Budget.IServerBudget _budget;
+    private readonly Budget.IServerCircuitBreaker _circuit;
+
     public DockerConnectionManager(
         IServerConfigService serverConfig,
         ISshTunnelManager sshTunnelManager,
+        Budget.IServerBudget budget,
+        Budget.IServerCircuitBreaker circuit,
         ILogger<DockerConnectionManager> logger)
     {
         _serverConfig = serverConfig;
         _sshTunnelManager = sshTunnelManager;
+        _budget = budget;
+        _circuit = circuit;
         _logger = logger;
     }
 
@@ -97,17 +104,51 @@ public class DockerConnectionManager : IDockerConnectionManager
         return false;
     }
 
-    /// <summary>
-    /// Runs a Docker operation and, if it fails with a transport-level error (a dead tunnel that
-    /// died mid-flight, a half-open connection the liveness check couldn't catch), invalidates the
-    /// connection and retries exactly once against a freshly established tunnel.
-    /// </summary>
-    public async Task<T> ExecuteAsync<T>(string? serverId, Func<DockerClient, Task<T>> operation)
+    /// <inheritdoc />
+    public async Task<T> ExecuteGuardedAsync<T>(string? serverId, Func<DockerClient, Task<T>> operation, string? singleFlightKey = null)
     {
+        var budgetKey = serverId ?? _serverConfig.GetDefaultServer()?.Id ?? "local";
+        _circuit.ThrowIfOpen(budgetKey);
+
         var client = await GetClientAsync(serverId);
         try
         {
-            return await operation(client);
+            var result = await _budget.RunAsync(budgetKey, () => operation(client), default, singleFlightKey);
+            _circuit.RecordSuccess(budgetKey);
+            return result;
+        }
+        catch (Exception ex) when (ex is not Budget.DuplicateRequestException)
+        {
+            // A discarded duplicate is not a health signal — the server never saw it.
+            _circuit.RecordFailure(budgetKey, ex);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Runs a Docker operation under the budget and circuit breaker and, if it fails with a transport-level
+    /// error (a dead tunnel that died mid-flight, a half-open connection the liveness check couldn't catch),
+    /// invalidates the connection and retries exactly once against a freshly established tunnel.
+    ///
+    /// <para><b>Not every Docker call comes through here yet.</b> Several operation classes still take a bare
+    /// client from <c>GetClientAsync</c> and are therefore outside the budget — see
+    /// <c>DockerBudgetCoverageTests</c>, which pins the remaining list so it can only shrink. The log fetch,
+    /// the call behind the 2026-08-26 incident, was moved onto <see cref="ExecuteGuardedAsync{T}"/> first.</para>
+    /// </summary>
+    public async Task<T> ExecuteAsync<T>(string? serverId, Func<DockerClient, Task<T>> operation, string? singleFlightKey = null)
+    {
+        var budgetKey = serverId ?? _serverConfig.GetDefaultServer()?.Id ?? "local";
+
+        // Fail fast while the circuit is open: a host that answers nothing does not get healthier from being
+        // asked again by five loops every cycle, and the attempt costs Whiskers a slot it could use elsewhere.
+        _circuit.ThrowIfOpen(budgetKey);
+
+        var client = await GetClientAsync(serverId);
+        try
+        {
+            var result = await _budget.RunAsync(budgetKey, () => operation(client), default, singleFlightKey);
+            _circuit.RecordSuccess(budgetKey);
+            return result;
         }
         catch (Exception ex) when (IsConnectionFailure(ex))
         {
@@ -120,7 +161,28 @@ public class DockerConnectionManager : IDockerConnectionManager
             // already rebuilt a fresh client for this server, and we must not tear that healthy one down.
             InvalidateClient(id, ifCurrent: client);
             client = await GetClientAsync(serverId);
-            return await operation(client);
+            try
+            {
+                // The retry takes a slot of its own: it is a second request the server has to serve.
+                var retried = await _budget.RunAsync(id, () => operation(client), default, singleFlightKey);
+                _circuit.RecordSuccess(id);
+                return retried;
+            }
+            catch (Exception retryFailure)
+            {
+                // Only the failure AFTER a fresh tunnel counts towards the circuit. The first one is exactly
+                // the transient the retry exists for; counting both would open the circuit twice as fast as
+                // configured and pause a server that is merely reconnecting.
+                _circuit.RecordFailure(id, retryFailure);
+                throw;
+            }
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+        {
+            // Our own deadline expiring is a statement about this host's responsiveness, so it counts —
+            // that is the signal the 2026-08-26 incident produced for six days and nobody tallied.
+            _circuit.RecordFailure(budgetKey, ex);
+            throw;
         }
     }
 

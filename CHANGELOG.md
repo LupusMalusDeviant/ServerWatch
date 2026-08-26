@@ -7,6 +7,19 @@ All notable changes to Whiskers are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The agent can now see deploys, backups and its own alert history.** Four read-only MCP tools closed real
+  blind spots: `list_git_deploy_apps` (repo, branch, outcome of the last deploy), `list_volume_backups` and
+  `list_volumes` (answering "when was this volume last backed up?", with the age spelled out), and
+  `list_recent_alerts`. The last one mattered most — the agent could read container states and raw logs but
+  not the conclusions Whiskers had already drawn, so it re-derived them or missed them entirely. Their write
+  counterparts are deliberately absent: starting a deploy belongs with a post-deploy health check and
+  automatic rollback, restoring a volume overwrites live data, and an agent that can send notifications can
+  flood the one channel that has to stay trustworthy. **MCP clients must reconnect to see the new tools** —
+  connectors read the tool list once, at session start.
+- **Every MCP tool now declares its permission level in its own source**, via `[McpToolLevel]` next to
+  `[McpServerTool]`, and the served surface is pinned in a generated
+  [tool catalog](docs/mcp-tool-catalog.md). Levels were carried over unchanged — this adds enforcement, not
+  policy.
 - **A server that stops answering now raises an alert.** A host dropping off the fleet was silent: the
   dashboard marked it unreachable, but nothing was sent — and every container alert and log-alert rule
   covering that host quietly stopped producing anything, which looks exactly like "all quiet". The health
@@ -22,6 +35,36 @@ All notable changes to Whiskers are documented here. The format follows
   `server_recovered` closes the outage rows it ends. Retention is the existing hourly prune.
 
 ### Fixed
+- **Whiskers held a two-core host at 98% CPU for six days — its own doing.** The log monitor bounded each
+  fetch with `Task.WhenAny(fetch, Task.Delay(timeout))`, which ends the *wait* and leaves the *request*
+  running: dockerd kept reading the log file until the proxy cut the connection 600 seconds later, while a
+  fresh fetch started every 60-second cycle. Ten concurrent full-log scans per container was the stable end
+  state (1.15 million `read()` syscalls per second, `dockerd` at 184% of 200%). The cancellation token now
+  reaches the Docker calls *and* the multiplexed read loop, so an expired deadline ends the request on the
+  server too. Two more places bounded a per-server call the same abandoning way — the fleet-wide container
+  listing and the system-info probe, both of which run for every server on every cycle — and were converted
+  as well. Full analysis in [the incident report](docs/reviews/2026-08-26-logmonitor-dockerd-cpu-incident.md);
+  the invariants that would have caught it now run in the test suite.
+- **Nothing limited how much Whiskers asked of one server.** Five background loops each policed only
+  themselves with their own timeout; the server sees the sum. There is now a per-server load budget at the
+  point Docker calls pass through, with separate lanes for background work and for anything a person is
+  waiting for — a background scan can no longer make the UI look frozen. Alongside it a circuit breaker:
+  after a run of transport failures Whiskers stops calling that host and retries with a single probe after a
+  cooldown. **Every such self-throttling is announced** (`server_throttled` / `server_throttling_ended`),
+  because a pause nobody is told about is indistinguishable from "all quiet" — which is what let the incident
+  above run for six days.
+- **A forgotten permission entry made a tool look present and never work.** `McpPermissionCheck` resolves a
+  tool that is missing from `DefaultToolLevels` to `admin` — correct as a fail-closed default, but it meant a
+  forgotten entry produced a tool that is registered, appears in `tools/list`, and is then denied to the
+  in-process agent on every single call, with no error and no log line. Levels are now declared on the method
+  and the build fails on any drift, including a stale dictionary entry for a tool that no longer exists, a
+  misspelled name in the permission gate, and a wire name that stops matching the method.
+- **The tool-registration guard only checked a lower bound.** It asserted "more than 40 tools", which stays
+  green while an entire module falls out of the catalog and its tools vanish from the served surface — the
+  shape of the regression that left the shipped MCP server serving nothing from 0.12.0 to 0.13.0. Counts are
+  now pinned per module, and a new test boots the real application and asks the running server for its tool
+  list over the real endpoint. Reintroducing the original bug was verified to fail exactly that test, and
+  none of the others.
 - **Log alerts only ever watched one server.** The monitor's scan listed containers without a server id,
   which returns the **default** server's containers only — so every "on all containers" rule silently
   covered a single host while the other five in a six-server fleet were never read. The scan now uses the

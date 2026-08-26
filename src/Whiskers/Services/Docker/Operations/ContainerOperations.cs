@@ -40,14 +40,14 @@ internal sealed class ContainerOperations
     private async Task<DockerClient> GetClient(string? serverId)
         => await _connectionManager.GetClientAsync(serverId);
 
-    public async Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null)
+    public async Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null, CancellationToken ct = default)
     {
         var server = serverId != null
             ? _serverConfigService.GetServer(serverId)
             : _serverConfigService.GetDefaultServer();
 
         var containers = await _connectionManager.ExecuteAsync(serverId, c =>
-            c.Containers.ListContainersAsync(new ContainersListParameters { All = all }));
+            c.Containers.ListContainersAsync(new ContainersListParameters { All = all }, ct));
 
         return containers.Select(c => ToContainerInfo(c, server?.Id ?? "local", server?.Name ?? "Local")).ToList();
     }
@@ -116,17 +116,21 @@ internal sealed class ContainerOperations
         {
             try
             {
-                var listTask = ListContainersAsync(all, server.Id);
-                var winner = await Task.WhenAny(listTask, Task.Delay(perServerTimeout));
-                if (winner == listTask)
-                    return new ServerListing(server, await listTask, null);
-
-                // Timed out — observe any later fault so it isn't an unobserved exception, then degrade.
-                _ = listTask.ContinueWith(t => { _ = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
-                _logger.LogWarning("Listing containers for server {ServerName} timed out ({Timeout}s) — skipping (degraded view).",
-                    server.Name, perServerTimeout.TotalSeconds);
-                return new ServerListing(server, new List<ContainerInfo>(),
-                    new FleetServerFailure(server.Id, server.Name, $"Timed out after {perServerTimeout.TotalSeconds:0}s"));
+                // Cancel the request, do not merely stop waiting for it: a Task.WhenAny race leaves the
+                // call running against the daemon, and this runs for every server on every cycle. Same
+                // defect as the log fetch in the 2026-08-26 incident.
+                using var timeout = new CancellationTokenSource(perServerTimeout);
+                try
+                {
+                    return new ServerListing(server, await ListContainersAsync(all, server.Id, timeout.Token), null);
+                }
+                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+                {
+                    _logger.LogWarning("Listing containers for server {ServerName} aborted after {Timeout}s — skipping (degraded view).",
+                        server.Name, perServerTimeout.TotalSeconds);
+                    return new ServerListing(server, new List<ContainerInfo>(),
+                        new FleetServerFailure(server.Id, server.Name, $"Timed out after {perServerTimeout.TotalSeconds:0}s"));
+                }
             }
             catch (Exception ex)
             {
@@ -253,9 +257,8 @@ internal sealed class ContainerOperations
             new ContainerRemoveParameters { Force = force });
     }
 
-    public async Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null)
+    public async Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null, CancellationToken ct = default)
     {
-        var client = await GetClient(serverId);
         var logParams = new ContainerLogsParameters
         {
             ShowStdout = true,
@@ -271,7 +274,14 @@ internal sealed class ContainerOperations
             Timestamps = true
         };
 
-        using var muxStream = await client.Containers.GetContainerLogsAsync(containerId, false, logParams);
+        // Through the guarded path, not a bare client: this is the exact call that ran thirteen times over
+        // on 2026-08-26, so it belongs under the load budget and the circuit breaker. Guarded rather than
+        // ExecuteAsync because a retry would restart the log stream from the top instead of resuming it.
+        // The single-flight key makes a second BACKGROUND request for the same container's logs drop rather
+        // than queue; the UI keeps its own lane.
+        using var muxStream = await _connectionManager.ExecuteGuardedAsync(serverId,
+            c => c.Containers.GetContainerLogsAsync(containerId, false, logParams, ct),
+            singleFlightKey: $"logs:{containerId}");
 
         var sb = new StringBuilder();
         var stdout = new MemoryStream();
@@ -286,7 +296,10 @@ internal sealed class ContainerOperations
         var buffer = new byte[16 * 1024];
         while (true)
         {
-            var read = await muxStream.ReadOutputAsync(buffer, 0, buffer.Length, CancellationToken.None);
+            // The token has to reach THIS line. Passing CancellationToken.None here is what kept a timed-out
+            // fetch reading from dockerd until the proxy cut it 600 seconds later, while Whiskers had long
+            // stopped waiting — the read loop behind 1.15 million syscalls per second (incident 2026-08-26).
+            var read = await muxStream.ReadOutputAsync(buffer, 0, buffer.Length, ct);
             if (read.EOF) break;
             if (read.Count == 0) continue;
 

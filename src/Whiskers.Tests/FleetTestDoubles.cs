@@ -17,6 +17,29 @@ internal sealed class FakeNotifications : INotificationService
     public Task SendTestAsync() => Task.CompletedTask;
 }
 
+/// <summary>Builds a REAL <see cref="Whiskers.Services.Docker.Budget.ServerBudget"/> for tests. Deliberately
+/// not a fake: the point of the budget is the limiting, and a double that always says yes would let a broken
+/// limit pass every test.</summary>
+internal static class TestBudget
+{
+    public static Whiskers.Services.Docker.Budget.IServerBudget Create(int background = 4, int interactive = 4) =>
+        new Whiskers.Services.Docker.Budget.ServerBudget(
+            new StaticOptionsMonitor<Whiskers.Configuration.ServerBudgetSettings>(
+                new Whiskers.Configuration.ServerBudgetSettings
+                {
+                    BackgroundConcurrency = background,
+                    InteractiveConcurrency = interactive
+                }),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<Whiskers.Services.Docker.Budget.ServerBudget>.Instance);
+}
+
+internal sealed class StaticOptionsMonitor<T>(T value) : Microsoft.Extensions.Options.IOptionsMonitor<T>
+{
+    public T CurrentValue { get; } = value;
+    public T Get(string? name) => CurrentValue;
+    public IDisposable? OnChange(Action<T, string?> listener) => null;
+}
+
 /// <summary>A fixed server registry.</summary>
 internal sealed class FakeServerConfig : IServerConfigService
 {
@@ -92,22 +115,58 @@ internal sealed class FakeDocker : IDockerService
     public async Task<IList<ContainerInfo>> ListAllContainersAsync(bool all = true)
         => (await ListAllContainersDetailedAsync(all)).Containers.ToList();
 
-    public Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null)
+    public Task<IList<ContainerInfo>> ListContainersAsync(bool all = true, string? serverId = null, CancellationToken ct = default)
         => Task.FromResult<IList<ContainerInfo>>(
             _containers.Where(c => c.ServerId == (serverId ?? "local")).ToList());
 
-    public Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null)
+    /// <summary>How long a log fetch takes. Zero (the default) keeps every existing test synchronous; a value
+    /// longer than the monitor's fetch timeout reproduces the wedged host from the 2026-08-26 incident.</summary>
+    public TimeSpan FetchDelay { get; set; } = TimeSpan.Zero;
+
+    private readonly ConcurrentDictionary<string, int> _inFlight = new();
+    private int _totalInFlight;
+    private int _peakTotalInFlight;
+
+    /// <summary>Highest number of log fetches that were in flight at the same time for one container.
+    /// Above 1 means an abandoned request kept running while the next cycle started another — the exact
+    /// steady state that put dockerd at 184% CPU for six days.</summary>
+    public ConcurrentDictionary<string, int> PeakConcurrentPerContainer { get; } = new();
+
+    /// <summary>Highest number of log fetches in flight across the whole fleet at any instant.</summary>
+    public int PeakTotalInFlight => Volatile.Read(ref _peakTotalInFlight);
+
+    public async Task<string> GetContainerLogsAsync(string containerId, int tailLines = 100, string? serverId = null, DateTime? since = null, CancellationToken ct = default)
     {
         Calls.Add(new LogCall(containerId, serverId, since));
         if (FailingServerIds.Contains(serverId ?? "")) throw new InvalidOperationException("host down");
 
         var key = $"{serverId}/{containerId}";
-        var lines = new List<string>();
-        if (Logs.TryGetValue(key, out var always)) lines.Add(always);
-        if (_timedLines.TryGetValue(key, out var timed))
-            lines.AddRange(timed.Where(l => since == null || l.At >= since.Value).Select(l => l.Text));
+        var perContainer = _inFlight.AddOrUpdate(key, 1, (_, v) => v + 1);
+        PeakConcurrentPerContainer.AddOrUpdate(key, perContainer, (_, peak) => Math.Max(peak, perContainer));
 
-        return Task.FromResult(lines.Count == 0 ? "(no logs available)" : string.Join('\n', lines));
+        var total = Interlocked.Increment(ref _totalInFlight);
+        int seen;
+        while (total > (seen = Volatile.Read(ref _peakTotalInFlight)))
+            Interlocked.CompareExchange(ref _peakTotalInFlight, total, seen);
+
+        try
+        {
+            // Stands in for dockerd: an abandoned request only stops if the cancellation actually reaches the
+            // backend. Honouring the token here is what makes the load invariants provable either way.
+            if (FetchDelay > TimeSpan.Zero) await Task.Delay(FetchDelay, ct);
+
+            var lines = new List<string>();
+            if (Logs.TryGetValue(key, out var always)) lines.Add(always);
+            if (_timedLines.TryGetValue(key, out var timed))
+                lines.AddRange(timed.Where(l => since == null || l.At >= since.Value).Select(l => l.Text));
+
+            return lines.Count == 0 ? "(no logs available)" : string.Join('\n', lines);
+        }
+        finally
+        {
+            _inFlight.AddOrUpdate(key, 0, (_, v) => v - 1);
+            Interlocked.Decrement(ref _totalInFlight);
+        }
     }
 
     // --- not used by the monitors ----------------------------------------------------------------------
@@ -120,7 +179,7 @@ internal sealed class FakeDocker : IDockerService
     public Task<string> CreateContainerAsync(DeploymentRequest request, string? serverId = null) => throw new NotSupportedException();
     public Task PullImageAsync(string imageName, IProgress<string>? progress = null, string? serverId = null) => throw new NotSupportedException();
     public Task<(string State, int ExitCode, bool OomKilled)> InspectContainerStateAsync(string containerId, string? serverId = null) => throw new NotSupportedException();
-    public Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null) => throw new NotSupportedException();
+    public Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<Dictionary<string, ServerSystemInfo>> GetAllServerSystemInfoAsync() => throw new NotSupportedException();
     public Task<string?> GetImageDigestAsync(string imageRef, string? serverId = null) => throw new NotSupportedException();
     public Task<string> RecreateContainerAsync(string containerId, string? serverId = null, IProgress<string>? progress = null) => throw new NotSupportedException();

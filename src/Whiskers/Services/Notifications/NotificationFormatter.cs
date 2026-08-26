@@ -25,6 +25,10 @@ public static class NotificationFormatter
         "webhook_disabled" => ("Webhook disabled", "Warning"),
         "server_unreachable" => ("Server unreachable", "Error"),
         "server_recovered" => ("Server reachable again", "Info"),
+        // Whiskers throttling ITSELF. Never silent: a self-imposed pause that nobody is told about
+        // turns "quiet" into "blind", and hides the next incident behind the fix for the last one.
+        "server_throttled" => ("Whiskers paused its own calls to this server", "Warning"),
+        "server_throttling_ended" => ("Whiskers resumed calls to this server", "Info"),
         _ when e.EventType.StartsWith("log_alert", StringComparison.Ordinal) => ("Log alert / error in log", "Warning"),
         _ => (e.EventType, "Info"),
     };
@@ -49,7 +53,8 @@ public static class NotificationFormatter
         if (e.EventType == "webhook_disabled") return "webhooks";
         if (e.EventType.StartsWith("agent_action", StringComparison.Ordinal)) return "agent-history";
         if (e.EventType == "cve_finding") return "cves";
-        if (e.EventType is "server_unreachable" or "server_recovered") return "servers";
+        if (e.EventType is "server_unreachable" or "server_recovered"
+                or "server_throttled" or "server_throttling_ended") return "servers";
         if (e.EventType.StartsWith("log_alert", StringComparison.Ordinal)) return "logs";
         if (e.EventType is "image_update" or "auto_update_failed"
                 or "unhealthy" or "oom_killed" or "stopped" or "restart_loop"
