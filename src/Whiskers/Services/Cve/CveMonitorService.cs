@@ -18,7 +18,7 @@ namespace Whiskers.Services.Cve;
 /// target) above the configured severity threshold are sent as a single aggregated
 /// Mattermost notification per target.
 /// </summary>
-public class CveMonitorService : BackgroundService, ICveMonitorService
+public class CveMonitorService : Whiskers.Services.FleetBackgroundService, ICveMonitorService
 {
     private readonly ICveFindingsStore _store;
     private readonly IOptionsMonitor<CveMonitorSettings> _settings;
@@ -66,7 +66,7 @@ public class CveMonitorService : BackgroundService, ICveMonitorService
         _metricsSource = metricsSource;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task RunAsync(CancellationToken ct)
     {
         _logger.LogInformation("CVE monitor started (enabled={Enabled}, interval={Hours}h)",
             _settings.CurrentValue.Enabled, _settings.CurrentValue.CheckIntervalHours);

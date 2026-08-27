@@ -12,7 +12,7 @@ namespace Whiskers.Services.Observability.Outcomes;
 /// wired up. Turning them on without knowing whether the criteria are any good would be the very habit this
 /// package exists to break: acting on an unverified belief about effect.</para>
 /// </summary>
-public sealed class ActionOutcomeSweeper : BackgroundService
+public sealed class ActionOutcomeSweeper : Whiskers.Services.FleetBackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(2);
@@ -29,7 +29,7 @@ public sealed class ActionOutcomeSweeper : BackgroundService
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(CancellationToken stoppingToken)
     {
         await Task.Delay(StartupDelay, stoppingToken);
 

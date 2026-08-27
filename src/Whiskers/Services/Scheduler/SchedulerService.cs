@@ -6,7 +6,7 @@ using Whiskers.Services.Persistence;
 
 namespace Whiskers.Services.Scheduler;
 
-public class SchedulerService : BackgroundService, ISchedulerService
+public class SchedulerService : Whiskers.Services.FleetBackgroundService, ISchedulerService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ITaskExecutor _executor;
@@ -25,7 +25,7 @@ public class SchedulerService : BackgroundService, ISchedulerService
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Scheduler service started. Check interval: {Interval}s", CheckInterval.TotalSeconds);
 

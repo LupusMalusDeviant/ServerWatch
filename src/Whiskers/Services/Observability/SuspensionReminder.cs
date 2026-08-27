@@ -17,7 +17,7 @@ namespace Whiskers.Services.Observability;
 /// supervises is a blindfold with a label on it. So the reminder lives here, where it can read the pauses,
 /// and the supervisor stays deaf to them. Neither one can be paused.</para>
 /// </summary>
-public sealed class SuspensionReminder : BackgroundService
+public sealed class SuspensionReminder : Whiskers.Services.FleetBackgroundService
 {
     /// <summary>How long a pause may stand before it is treated as a blind spot rather than a decision.</summary>
     public static readonly TimeSpan ReminderAfter = TimeSpan.FromHours(24);
@@ -45,7 +45,7 @@ public sealed class SuspensionReminder : BackgroundService
         _reminderAfter = reminderAfter ?? ReminderAfter;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {

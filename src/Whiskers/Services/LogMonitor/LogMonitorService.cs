@@ -15,7 +15,7 @@ namespace Whiskers.Services.LogMonitor;
 /// means "all containers of the fleet", the same scope <see cref="HealthMonitor.ContainerHealthMonitor"/>
 /// has always used.
 /// </summary>
-public class LogMonitorService : BackgroundService, ILogMonitorService
+public class LogMonitorService : Whiskers.Services.FleetBackgroundService, ILogMonitorService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDockerService _docker;
@@ -117,7 +117,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         _maxLookback = maxLookback ?? MaxLookback;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Log monitor service started. Check interval: {Interval}s", CheckInterval.TotalSeconds);
         await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); // initial delay

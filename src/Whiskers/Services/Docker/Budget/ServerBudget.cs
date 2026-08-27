@@ -42,7 +42,17 @@ public sealed class ServerBudget : IServerBudget
         _logger = logger;
     }
 
-    public IDisposable BackgroundScope() => new Scope();
+    public IDisposable BackgroundScope() => EnterBackground();
+
+    /// <summary>
+    /// Marks the current async flow as background work without needing an <see cref="IServerBudget"/> to hand.
+    ///
+    /// <para>The flag behind it is a static <c>AsyncLocal</c> already, so this adds no shared state — it only
+    /// removes the reason a caller might skip the scope. <see cref="FleetBackgroundService"/> uses it so that
+    /// entering the background lane costs a base class rather than a constructor parameter in every loop.
+    /// Ten of twelve loops had skipped it, which put them in the lane reserved for waiting humans.</para>
+    /// </summary>
+    public static IDisposable EnterBackground() => new Scope();
 
     public bool IsBackgroundCall => IsBackground.Value;
 

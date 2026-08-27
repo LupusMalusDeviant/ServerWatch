@@ -11,7 +11,7 @@ namespace Whiskers.Services.AutoUpdate;
 /// Background service that auto-updates containers WITH OPT-IN policies.
 /// Default: OFF. Each container must explicitly enable auto-update.
 /// </summary>
-public class AutoUpdateService : BackgroundService, IAutoUpdateService
+public class AutoUpdateService : Whiskers.Services.FleetBackgroundService, IAutoUpdateService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDockerService _docker;
@@ -35,7 +35,7 @@ public class AutoUpdateService : BackgroundService, IAutoUpdateService
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Auto-update service started (opt-in only). Check interval: {Interval}m", CheckInterval.TotalMinutes);
         await Task.Delay(TimeSpan.FromSeconds(60), stoppingToken);

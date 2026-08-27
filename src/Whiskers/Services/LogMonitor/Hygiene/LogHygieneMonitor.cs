@@ -16,7 +16,7 @@ namespace Whiskers.Services.LogMonitor.Hygiene;
 ///
 /// <para>It reports and never repairs. Setting a rotation limit recreates the container.</para>
 /// </summary>
-public sealed class LogHygieneMonitor : BackgroundService
+public sealed class LogHygieneMonitor : Whiskers.Services.FleetBackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromHours(24);
     private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(5);
@@ -52,7 +52,7 @@ public sealed class LogHygieneMonitor : BackgroundService
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(CancellationToken stoppingToken)
     {
         await Task.Delay(StartupDelay, stoppingToken);
 

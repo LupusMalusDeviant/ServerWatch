@@ -9,7 +9,7 @@ using Whiskers.Services.Persistence;
 
 namespace Whiskers.Services.Metrics;
 
-public class MetricsCollectorService : BackgroundService
+public class MetricsCollectorService : Whiskers.Services.FleetBackgroundService
 {
     private readonly IServiceProvider _services;
     private readonly IOptionsMonitor<MetricAlertSettings> _alertSettings;
@@ -48,7 +48,7 @@ public class MetricsCollectorService : BackgroundService
         _selfMetrics = selfMetrics;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task RunAsync(CancellationToken ct)
     {
         var startup = _metricsSettings.CurrentValue;
         _logger.LogInformation("Metrics collector started (interval: {Interval}s, retention: {Retention}d, enabled: {Enabled})",

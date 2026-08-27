@@ -11,7 +11,7 @@ using Whiskers.Services.Observability.SelfMetrics;
 
 namespace Whiskers.Services.HealthMonitor;
 
-public class ContainerHealthMonitor : BackgroundService
+public class ContainerHealthMonitor : Whiskers.Services.FleetBackgroundService
 {
     private readonly IDockerService _docker;
     private readonly IHealthStore _healthStore;
@@ -54,7 +54,7 @@ public class ContainerHealthMonitor : BackgroundService
             _settings.ServerUnreachableCycles, _settings.ServerUnreachableColdStartCycles);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task RunAsync(CancellationToken ct)
     {
         _logger.LogInformation("Container health monitor started (interval: {Interval}s)",
             _settings.CheckIntervalSeconds);

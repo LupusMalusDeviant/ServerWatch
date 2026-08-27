@@ -8,7 +8,7 @@ using Whiskers.Services.Notifications;
 
 namespace Whiskers.Services.ImageUpdate;
 
-public class ImageUpdateChecker : BackgroundService
+public class ImageUpdateChecker : Whiskers.Services.FleetBackgroundService
 {
     private readonly IServiceProvider _services;
     private readonly IImageUpdateStore _store;
@@ -33,7 +33,7 @@ public class ImageUpdateChecker : BackgroundService
         _selfMetrics = selfMetrics;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task RunAsync(CancellationToken ct)
     {
         if (!_settings.Enabled)
         {

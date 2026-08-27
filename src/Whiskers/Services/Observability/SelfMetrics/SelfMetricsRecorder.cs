@@ -16,7 +16,7 @@ namespace Whiskers.Services.Observability.SelfMetrics;
 /// inspection, no work on the hosts. A self-measurement that adds load to what it measures is the same
 /// mistake it exists to reveal, one level up.</para>
 /// </summary>
-public sealed class SelfMetricsRecorder : BackgroundService
+public sealed class SelfMetricsRecorder : Whiskers.Services.FleetBackgroundService
 {
     private static readonly TimeSpan SampleInterval = TimeSpan.FromMinutes(1);
 
@@ -41,7 +41,7 @@ public sealed class SelfMetricsRecorder : BackgroundService
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(CancellationToken stoppingToken)
     {
         // Restore first, before any sample is written: a sample taken from an empty in-memory view would
         // persist the very gap the restore exists to close.

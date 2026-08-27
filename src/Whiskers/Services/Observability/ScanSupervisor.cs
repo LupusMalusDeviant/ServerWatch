@@ -21,7 +21,7 @@ namespace Whiskers.Services.Observability;
 /// emergency stop arrives (SP-5): a switch that can silence the alarm about being silent is not a switch, it
 /// is a blindfold.</para>
 /// </summary>
-public sealed class ScanSupervisor : BackgroundService
+public sealed class ScanSupervisor : Whiskers.Services.FleetBackgroundService
 {
     /// <summary>A gap of more than this many intervals is reported. Three, not one: a single missed cycle is
     /// normal (a slow host, a long scan), three in a row is not.</summary>
@@ -60,7 +60,7 @@ public sealed class ScanSupervisor : BackgroundService
         _minimumGap = minimumGap ?? DefaultMinimumGap;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task RunAsync(CancellationToken ct)
     {
         // Long enough that the loops have had a chance to record a first cycle; otherwise every restart
         // reports the whole fleet as stalled.
