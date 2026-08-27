@@ -8,9 +8,13 @@
 
 ## 1. Die Dokumente
 
+> `changeme.md` wird bewusst **nicht** mit veröffentlicht: Es führt noch offene Sicherheitspunkte mit Datei
+> und Zeilennummer, und dieses Werkzeug verwaltet fremde Server. Sobald HOCH-11 und KRIT-3 geschlossen sind,
+> kann es dazukommen. Die Verweise darauf im übrigen Text sind Kennungen (C1, C7, …), keine Links.
+
 | Dokument | Inhalt | Charakter |
 |---|---|---|
-| [changeme.md](changeme.md) | Was ist intern schlecht gelöst (C1–C18) + offene Review-Altlasten (HOCH-11 etc.) | Aufräumliste, viele Voraussetzungen für den Rest |
+| `changeme.md` *(bewusst nicht im Repo)* | Was ist intern schlecht gelöst (C1–C18) + offene Review-Altlasten (HOCH-11 etc.) | Aufräumliste, viele Voraussetzungen für den Rest |
 | [stableDB.md](stableDB.md) | PostgreSQL als zweiter DB-Provider neben SQLite | In sich geschlossenes Paket, 8 Schritte |
 | [RoadToSAP.md](RoadToSAP.md) | Modul-Framework: Core + an-/abschaltbare Module, Interface-first | Größte strukturelle Initiative, Phase 0–1 für 1.0 |
 | [outOfTheBox.md](outOfTheBox.md) | Setup-Wizard, Release-Image, Install-Script, geführtes Onboarding (W1–W4) | KMU-Adoption, UX |

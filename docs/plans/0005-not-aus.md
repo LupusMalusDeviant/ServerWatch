@@ -163,15 +163,17 @@ Boot-Matrix-Test (`ValidateOnBuild`) geprüft. Nicht deployt, nicht gepusht.
 | WP1.4 Zentrale Abfrage | ✅ *anders gelöst* | siehe Abweichung 2 |
 | WP-MCP.1–.2 | ✅ | `LoopSuspensionTools`, im Katalog, Registrierungszählung 40 → 43 |
 
-### Drei Abweichungen vom Plan — bitte prüfen
+### Drei Abweichungen vom Plan — vom Nutzer bestätigt (2026-08-27)
 
-**1. Die Pause überlebt bewusst KEINEN Neustart** (WP1.2 und ein DoD-Punkt).
+**1. Die Pause überlebt bewusst KEINEN Neustart** (WP1.2 und ein DoD-Punkt). ✅ **Entschieden: so bleibt es.**
 Der Plan verlangt Persistenz. Beim Bauen wurde das zum Argument gegen sich selbst: Eine Pause ist die Reaktion
 auf etwas, das *gerade* passiert. Überlebt sie einen Neustart, überlebt sie auch den Grund — und ein Server,
 der seit dem letzten Neustart unbeobachtet ist, ohne dass jemand die Entscheidung dazu erinnert, ist genau die
 stille Blindheit, gegen die WP0 gebaut wurde. Die 24-Stunden-Erinnerung deckt den Fall *innerhalb* eines
-Prozesslebens ab. **Das ist eine Entscheidung, keine Auslassung** — wenn Persistenz gewünscht ist, gehört sie
-zusammen mit einem Wiederanlauf-Hinweis („diese Pause stammt von vor dem Neustart") gebaut.
+Prozesslebens ab. Wäre Persistenz doch gewünscht, gehörte sie zusammen mit einem Wiederanlauf-Hinweis
+(„diese Pause stammt von vor dem Neustart") gebaut — der Nutzer hat sich am 2026-08-27 ausdrücklich dagegen
+entschieden. **WP1.2 gilt damit als bewusst verworfen, nicht als offen**; der DoD-Punkt „Pause überlebt
+Neustart" entfällt.
 
 **2. Kein Architekturtest über `BackgroundService`, sondern eine Sperre im Verkehr.**
 Der Plan wollte einen Test, der jede Schleife ohne Pausenabfrage anmeckert. Umgesetzt ist stattdessen die
@@ -186,24 +188,38 @@ zur `list_*`-Konvention der übrigen 88 Werkzeuge. `pause_server_checks` ist auf
 verlangt eine Begründung; „bis Widerruf" bleibt dem Menschen vorbehalten. Zurückschalten ist ungedeckelt, weil
 *mehr* Beobachtung nie die gefährliche Richtung ist.
 
-### Offen — und einer davon mit Einwand
+### WP3 — verworfen (Nutzerentscheidung 2026-08-27)
 
-- **WP3 (automatische Pause bei offenem Circuit) — Einwand, nicht umgesetzt.** Der Circuit aus Plan-0001
-  sperrt den Server bereits während der Abkühlzeit. Eine zusätzliche Pause obendrauf hieße: fünf Fehlschläge
-  in Folge nehmen die Überwachung eines Servers für eine deutlich längere Zeit vom Netz — also genau dann,
-  wenn er wackelt und man am meisten sehen will. Dazu käme eine zweite Meldung für denselben Vorgang.
-  **Das ist eine Verhaltensverschärfung, die eine Entscheidung braucht**, keine Fleißarbeit.
+**Die automatische Pause bei offenem Circuit wird nicht gebaut.** Der Circuit aus Plan-0001 sperrt den Server
+bereits während der Abkühlzeit. Eine zusätzliche Pause obendrauf hieße: fünf Fehlschläge in Folge nehmen die
+Überwachung eines Servers für eine deutlich längere Zeit vom Netz — also genau dann, wenn er wackelt und man
+am meisten sehen will. Dazu käme eine zweite Meldung für denselben Vorgang.
+
+Der Zustand bleibt trotzdem sichtbar: `whiskers_self_circuit_open` auf `/metrics`, die Circuit-Spalte auf
+`/self-status` und `get_whiskers_self_status` zeigen einen offenen Circuit an. Fehlt nur eine *Meldung*
+darüber — falls das später gewünscht ist, ist es ein kleiner eigener Schritt und nicht dieses Paket.
+
+**WP3 ist damit erledigt im Sinne von „entschieden", nicht offen.** Die zugehörigen DoD-Punkte entfallen.
+
+### Offen
+
 - WP2.1/2.2/2.4 (Bedienelemente in der Oberfläche, globaler Not-Aus mit Admin-Recht) — MCP-Weg steht, UI fehlt.
 - WP4 (Rückkehr ohne Sturm), WP5 (Darstellung `pausiert` ≠ `gesund` ≠ `ausgefallen`).
 - Wirksamkeitsmessung **auf dem Zielserver** und `tools/list` am laufenden Server: beides braucht einen Deploy.
 
 ## Definition of Done
 
-- [ ] WP0–WP5 umgesetzt
-- [ ] Wirksamkeit **auf dem Zielserver** gemessen: 0 neue Anfragen binnen 60 s
-- [ ] Alle Loops nachweislich pausiert (Selbstmetriken je Loop auf 0)
-- [ ] Aufsichtsregel greift auch bei globalem Not-Aus
-- [ ] Keine Lastspitze nach Pausenende
-- [ ] Pause überlebt Neustart
-- [ ] Architekturtest verhindert Loops ohne Pausenabfrage
-- [ ] MCP-Werkzeuge ausgeliefert, im Katalog eingetragen und am laufenden Server in `tools/list` sichtbar
+- [x] WP0, WP1 (Kern), WP-MCP umgesetzt · WP3 entschieden (verworfen) · WP2-UI/WP4/WP5 offen
+- [ ] Wirksamkeit **auf dem Zielserver** gemessen: 0 neue Anfragen binnen 60 s *(braucht einen Deploy)*
+- [x] Alle Loops nachweislich pausiert — an der Verkehrssperre statt an den Selbstmetriken gemessen: der Test
+      verlangt, dass ein Hintergrundaufruf auf einen pausierten Server abgewiesen wird
+- [x] Aufsichtsregel greift auch bei globalem Not-Aus — per Test erzwungen, `ScanSupervisor` darf den
+      Aussetzungsdienst nicht einmal kennen
+- [ ] Keine Lastspitze nach Pausenende *(WP4, offen)*
+- [x] ~~Pause überlebt Neustart~~ — **gestrichen**, Nutzerentscheidung 2026-08-27: eine Pause reagiert auf
+      etwas, das gerade passiert; überlebt sie den Neustart, überlebt sie auch ihren Grund
+- [x] Kein Loop kann die Pausenabfrage vergessen — stärker als der geplante Architekturtest gelöst: die
+      Abfrage sitzt im einzigen Punkt, an dem jeder Docker-Aufruf vorbeikommt, also stellt keine Schleife sie
+      selbst
+- [ ] MCP-Werkzeuge am **laufenden** Server in `tools/list` sichtbar *(ausgeliefert und im Katalog; die
+      Gegenprobe am laufenden Server braucht einen Deploy)*
