@@ -12,8 +12,10 @@
 @inject Whiskers.Services.ServerConfig.IServerConfigService ServerConfigService
 @inject Whiskers.Services.AuditLog.IAuditLogService AuditLog
 @inject Whiskers.Services.Workloads.IWorkloadProviderFactory WorkloadFactory
+@inject Whiskers.Services.Observability.ILoopSuspensionService Suspension
 @inject IStringLocalizer<SharedResource> L
 @implements IDisposable
+@using Whiskers.Services.Observability
 
 <PageTitle>Dashboard - Whiskers</PageTitle>
 
@@ -28,6 +30,26 @@
         </div>
     </MudStack>
 </div>
+
+@* Plan-0005 WP5.2 — visible on the dashboard, without having to go and look for it.
+   A paused server produces exactly the emptiness a healthy one does, so the ONE place everybody opens has
+   to say when part of the fleet is not being watched. Above the cards on purpose: the counts below are
+   incomplete while this is showing, and a reader needs to know that before reading them. *@
+@if (_pausedServers.Count > 0)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-4" Icon="@Icons.Material.Filled.PauseCircle">
+        <MudText Typo="Typo.body2">
+            <b>@_pausedServers.Count of @_serverCount servers are not being checked right now.</b>
+            The numbers below do not include them — that is not the same as those servers being fine.
+        </MudText>
+        <MudText Typo="Typo.caption">
+            @string.Join(" · ", _pausedServers.Select(p =>
+                $"{ServerName(p.ServerId)} ({(p.Automatic ? "Whiskers paused itself" : "paused by an operator")}, " +
+                $"{ServerMonitoring.Remaining(p.Until - DateTime.UtcNow)})"))
+        </MudText>
+        <MudLink Href="/servers" Typo="Typo.caption">Manage on the servers page</MudLink>
+    </MudAlert>
+}
 
 @* Summary Cards *@
 <MudGrid Class="mb-4">
@@ -427,6 +449,15 @@
 
 @code {
     private List<ContainerInfo> _containers = new();
+
+    // Plan-0005 WP5.2. Read straight from the service on each render rather than cached: a pause set on the
+    // servers page a moment ago must show here without a refresh, and reading it costs a dictionary lookup.
+    private IReadOnlyList<LoopSuspension> _pausedServers => Suspension.Current();
+    private int _serverCount => ServerConfigService.GetEnabledServers().Count;
+
+    private string ServerName(string serverId) =>
+        ServerConfigService.GetServer(serverId)?.Name ?? serverId;
+
     // C12: pre-update rollback snapshots keyed by "{ServerId}|{ContainerName}" (the container id changes on
     // update, so the name is the stable key). Populated each refresh; drives the per-row rollback button.
     private Dictionary<string, Whiskers.Models.UpdateRollbackEntity> _rollbacks = new();

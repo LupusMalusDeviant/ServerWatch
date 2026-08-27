@@ -58,6 +58,23 @@ Dieser Plan hat eine ungewöhnliche Reihenfolge: **Die Aufsichtsregel wird zuers
 
 **Ergebnis:** Der Weg von „Verdacht" zu „Whiskers ist raus" ist ein Klick.
 
+> 🟢 **WP2 erledigt (2026-08-27).** Je Server ein Schalter in der Serveransicht mit Dauerauswahl
+> (15 min / 1 h / 4 h / bis Widerruf), global einer in der Kopfzeile.
+>
+> **Zwei verschiedene Rechte, mit Absicht.** Einen Server pausieren ist Operator-Sache — das ist der normale
+> Griff, wenn man sich einen Host ansehen will, ohne dass Whiskers dazwischenfunkt. Die ganze Flotte auf
+> einmal unbeobachtet zu machen ist es nicht; das ist Admin (WP2.4), und der Hinweis nennt die **Zahl** der
+> Server, die gerade blind geworden sind. Gelöst über die Rolle, die die Seite ohnehin auflöst
+> (`AppRole`/`CurrentUserService`) — die Auth-Middleware ist nicht angefasst.
+>
+> **„Bis Widerruf" steht bewusst zuletzt in der Liste.** Der häufige Fall ist „zehn Minuten draufschauen";
+> stünde die unbefristete Option oben, wäre ausgerechnet die, die eine Erinnerung braucht, der versehentliche
+> Standard. Ein Test hält die Reihenfolge fest.
+>
+> Beide Aktionen landen im Audit-Log (`server.pause-checks`, `server.pause-checks-all`), damit die
+> Aktions-Zeitachse aus SP-3 sie zeigt — eine Pause, die die Kurve verändert, muss auf derselben Achse
+> stehen wie alles andere, was sie verändert.
+
 ### WP3: Automatische Pause bei offenem Circuit
 
 **Zweck:** Die feine und die grobe Kelle verbinden.
@@ -116,6 +133,25 @@ Dieser Plan hat eine ungewöhnliche Reihenfolge: **Die Aufsichtsregel wird zuers
 3. **WP5.3:** Gemeinsame Bildsprache mit `stopped-by-policy` aus attackResponse AR-3 — beides sind Zustände „bewusst nicht normal".
 
 **Abnahme:** Ein Betreiber ohne Vorwissen erkennt auf dem Dashboard, welche Server nicht überwacht werden.
+
+> 🟢 **WP5 erledigt (2026-08-27).** Die Entscheidung, in welchem Zustand ein Server ist, liegt in
+> `ServerMonitoring.Describe` — getestet, nicht in der Ansicht versteckt. **Vier** Zustände statt der drei aus
+> dem Plan, weil sich beim Bauen zeigte, dass „nicht überwacht" zwei verschiedene Dinge sein können:
+>
+> | Zustand | Was er bedeutet |
+> |---|---|
+> | `monitored` | Wird geprüft. Ausbleibende Befunde heißen hier: es gibt nichts zu finden. |
+> | `paused` | Jemand hat abgeschaltet. Eine Entscheidung, kein Urteil über den Server. |
+> | `throttled` | Whiskers hat von selbst aufgehört anzurufen (offener Circuit). Auch blind — aber **niemand hat es gewählt**. |
+> | `unreachable` | Der Server antwortet nicht. Hier ist das Schweigen tatsächlich eine Aussage über ihn. |
+>
+> **Eine bewusste Pause sticht ihre eigenen Symptome.** Ein pausierter Server antwortet auf keine Prüfung
+> mehr, sähe also auch unerreichbar aus, und sein Circuit ginge irgendwann auf. Das als Fehler zu melden
+> hieße, jemanden den eigenen Schalter debuggen zu lassen. Ein Test verlangt genau diese Rangfolge;
+> Gegenprobe (Rangfolge entfernt) → drei Tests rot.
+>
+> **Auf dem Dashboard über den Kennzahlen**, nicht darunter: Die Zahlen dort sind unvollständig, solange
+> Server pausiert sind, und das muss man wissen, *bevor* man sie liest.
 
 ### WP-MCP: Agenten-Oberfläche
 
