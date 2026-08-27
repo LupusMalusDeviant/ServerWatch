@@ -36,6 +36,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 | `get_container_logs` | read | Get logs from a Docker container. |
 | `get_container_metrics` | read | Get historical CPU/memory metrics for a container over a time period. |
 | `get_health_summary` | read | Get a health summary of all containers across all servers. |
+| `get_host_load` | read | Report each server's current host load and how much of it the containers actually account for. Use this when a host looks busy but no container explains it — that gap means a process outside the containers (dockerd, a backup job, a runaway service) is the likely cause, which per-container stats can never show. The two CPU figures use different conventions and are reconciled here. Read-only. |
 | `get_nginx_config` | read | Get the Nginx configuration for a specific site. |
 | `get_schema` | read | Get the schema (columns, types, keys) of a table. |
 | `get_server_info` | read | Get detailed system information for a server (OS, CPU, RAM, disk, Docker version, containers). |
@@ -136,7 +137,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 
 | Level | Tools |
 |---|---|
-| read | 40 |
+| read | 41 |
 | write | 33 |
 | admin | 3 |
-| **total** | **76** |
+| **total** | **77** |

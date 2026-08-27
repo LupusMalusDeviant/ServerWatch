@@ -27,6 +27,9 @@ public static class NotificationFormatter
         "server_recovered" => ("Server reachable again", "Info"),
         // Whiskers throttling ITSELF. Never silent: a self-imposed pause that nobody is told about
         // turns "quiet" into "blind", and hides the next incident behind the fix for the last one.
+        "host_cpu_high" => ("Server CPU high for a sustained period", "Warning"),
+        "host_memory_high" => ("Server memory high for a sustained period", "Warning"),
+        "host_cpu_unexplained" => ("Host load no container accounts for", "Warning"),
         "log_rotation_missing" => ("Container log growing without a rotation limit", "Warning"),
         "loops_paused" => ("Background checks paused for this server", "Warning"),
         "loops_resumed" => ("Background checks running again", "Info"),
@@ -62,6 +65,7 @@ public static class NotificationFormatter
         if (e.EventType == "cve_finding") return "cves";
         if (e.EventType is "server_unreachable" or "server_recovered"
                 or "server_throttled" or "server_throttling_ended") return "servers";
+        if (e.EventType is "host_cpu_high" or "host_memory_high" or "host_cpu_unexplained") return "servers";
         if (e.EventType == "log_rotation_missing") return "servers";
         if (e.EventType is "loops_paused" or "loops_resumed") return "servers";
         if (e.EventType is "monitoring_stalled" or "monitoring_resumed") return "servers";

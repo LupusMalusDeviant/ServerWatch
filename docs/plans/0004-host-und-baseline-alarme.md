@@ -32,17 +32,22 @@ Dieser Plan hat eine Besonderheit: **Der Prüfstand existiert bereits.** Die Met
 
 **Abnahme:** Der Datensatz enthält den Lastsprung am 20.08. um 14:02 und die Entlastung am 26.08. um 15:07.
 
-> ⏸️ **WP0 blockiert — zwei Nutzerentscheidungen** (2026-08-26). Der Prüfstand ist die Grundlage des ganzen Pakets, aber die Daten liegen nicht hier: `ServerMetrics` für BurgCloud steckt in der Datenbank der laufenden Whiskers-Instanz auf Badwolf. Sie zu holen wirft zwei Fragen auf, die nicht nebenbei zu entscheiden sind:
+> 🟢 **WP0 erledigt (2026-08-27) — Weg (c), Nutzerentscheidung.** Synthetischer Prüfstand aus den
+> **dokumentierten** Werten des Vorfallsberichts, kein Produktionszugriff, keine echten Betriebsdaten im
+> öffentlichen Repo.
 >
-> 1. **Produktionszugriff.** Der Export braucht einen Lesezugriff auf die Datenbank der laufenden Instanz (`ssh badwolf`). Lesend und harmlos — aber ein Zugriff auf ein Produktivsystem, und der Auftrag lautete ausdrücklich „kein Deploy". Ich habe das nicht ohne Rückfrage getan.
-> 2. **Öffentliches Repo.** Das Produkt-Repo ist öffentlich. Echte Betriebsdaten der eigenen Server — Serverkennungen, CPU-, Speicher- und Plattenverläufe über eine Woche — in einen öffentlichen Commit zu legen, ist eine bewusste Entscheidung. Der Plan lässt „anonymisiert, falls nötig" zu; das wäre der Mittelweg (Serverkennungen ersetzen, Zeitstempel relativ statt absolut).
+> **Als Generator statt als CSV**, und das ist Absicht: Eine eingecheckte Messreihe sähe aus wie eine
+> Aufzeichnung. `BurgCloudIncidentSeries` trägt jede Konstante mit der Zeile des Berichts, aus der sie stammt
+> — 2 Kerne, 12 % → 98,3 % in zwei Minuten, sechs Tage Plateau, 9,0 % danach, ~1.600 Messpunkte am Tag. Der
+> Wiedergabe-Apparat (WP0.2) schickt die Woche in unter einer Sekunde durch die Regeln; datiert wird nach
+> **Messzeitpunkt**, nie nach der Uhr — eine Regel, die `DateTime.UtcNow` liest, ließe sich nicht wiedergeben
+> und könnte nie zeigen, dass sie den Vorfall fängt.
 >
-> **Mögliche Wege**, in absteigender Aussagekraft:
-> - **a)** Echte Daten anonymisiert ins Repo — voller Beweiswert, verlangt Punkt 1 und eine Anonymisierungsrunde.
-> - **b)** Echte Daten lokal halten (`.gitignore`), Test überspringt sich, wenn die Datei fehlt — beweiskräftig auf deiner Maschine, aber in CI wertlos, und ein Test, der sich still überspringt, ist genau die Sorte Lücke, gegen die dieses Paket antritt.
-> - **c)** Synthetischer Datensatz aus den **dokumentierten** Messwerten des Vorfallsberichts (12 % → 98 % in zwei Minuten, sechs Tage Plateau, Container-Summe 12 %). Sofort machbar, ohne Produktionszugriff — aber es ist dann nachgebautes Verhalten, nicht der echte Verlauf, und der Plan verlangt ausdrücklich die echten Daten.
->
-> Bis dahin ruht SP-4. Die übrigen Pakete hängen nicht davon ab.
+> **Was dieser Prüfstand nicht kann, und das bleibt offen:** Er beweist, dass die Regeln **anschlagen**. Er
+> beweist nicht, dass sie in einer normalen Woche **schweigen** — dafür fehlt ihm die Textur echter Daten
+> (Tagesgang, Backup-Spitzen, Rauschen). Erfundenes Rauschen wäre schlimmer als keines: Es sähe aus wie ein
+> Beleg über Fehlalarmverhalten, den diese Daten nicht hergeben. Die Fehlalarmquote aus den Zielen dieses
+> Plans ist damit **nicht** abgenommen und braucht weiterhin die echte Reihe.
 
 ### WP1: Host-Schwellen
 
@@ -55,6 +60,16 @@ Dieser Plan hat eine Besonderheit: **Der Prüfstand existiert bereits.** Die Met
 
 **Abnahme:** Wiedergabe des Prüfstands erzeugt eine Meldung ≤ 20 min nach 14:02.
 
+> 🟢 **WP1 erledigt (2026-08-27).** `HostLoadEvaluator` — anhaltende Host-CPU und -RAM, Schwellen 90 %,
+> Dauer 10 min, Schwellen über `HostLoadThresholds` je Instanz setzbar. Im Betrieb verdrahtet in
+> `MetricsCollectorService` neben der vorhandenen `disk:{server}`-Regel; **derselbe** Evaluator wird von der
+> Wiedergabe getrieben, es läuft also das, was nachweislich den Vorfall fängt. Abnahme erfüllt: Meldung
+> 12 Minuten nach dem Sprung. Gegengewicht ebenfalls getestet — ein Fünf-Minuten-Peak erzeugt nichts, und
+> sechs Tage Dauerlast erzeugen eine Handvoll Meldungen statt 8.900.
+>
+> Offen aus WP1.3: Schwellen sind pro Instanz konfigurierbar, aber noch nicht **je Server** — dafür braucht
+> es einen Platz in der Serverkonfiguration, und das ist eine eigene Entscheidung über `servers.json`.
+
 ### WP2: Unerklärte Host-Last
 
 **Zweck:** Das spezifischste Signal des Vorfalls — es nennt die Ursachenklasse mit.
@@ -65,6 +80,21 @@ Dieser Plan hat eine Besonderheit: **Der Prüfstand existiert bereits.** Die Met
 3. **WP2.3:** Formulierung als Hinweis, nicht als Beweis — kurzlebige Container fehlen in der Summe.
 
 **Abnahme:** Auf einem Leerlaufserver liegt die Differenz nahe null; `stress-ng` auf dem Host erzeugt eine Meldung mit korrekter Ursachenklasse.
+
+> 🟢 **WP2 erledigt (2026-08-27), bis auf die Messung am echten Host.** Die Normierung (WP2.1) sitzt in
+> `HostSample.ContainerCpuPercentOfMachine`: Container-Summe geteilt durch die Kernzahl, bevor irgendetwas
+> verglichen wird. Host-CPU ist Prozent der **Maschine**, die Container-Summe ist Dockers Skala, wo ein
+> ausgelasteter Kern 100 ist — im Vorfall las Whiskers 98,3 %, die Außenmessung 195,8 von 200: dieselbe Last,
+> zwei Konventionen.
+>
+> **Der Fehler versagt lautlos und in die gefährliche Richtung.** Ohne Umrechnung wird die Container-Summe
+> überzählt, die unerklärte Differenz fällt zu klein aus, und die Meldung bleibt aus. BurgClouds eigene
+> Zahlen decken das *nicht* auf — 98 − 24 reißt die Schwelle so oder so —, deshalb pinnt ein eigener Test den
+> Fall auf einer 4-Kern-Maschine. Gegenprobe: Normierung entfernt → dieser Test wird rot, der auf den echten
+> Vorfallszahlen bleibt grün. Genau darum steht er da.
+>
+> WP2.3 erfüllt: Der Text nennt die Ursachenklasse und sagt ausdrücklich, dass kurzlebige Container in der
+> Summe fehlen — Hinweis, kein Beweis. **Offen:** die Abnahme mit `stress-ng` auf einem echten Host.
 
 ### WP3: Rollende Baseline
 
@@ -111,6 +141,17 @@ Dieser Plan hat eine Besonderheit: **Der Prüfstand existiert bereits.** Die Met
 4. **WP-MCP.4:** CHANGELOG-Eintrag mit dem Hinweis, dass der Konnektor neu verbunden werden muss.
 
 **Abnahme:** Der Agent gibt Ist-Wert, Schwelle und Dauer korrekt wieder. Gegenprobe am **laufenden** Server: `tools/list` enthält die Werkzeuge mit der erwarteten Stufe.
+
+> 🟢 **WP-MCP teilweise erledigt (2026-08-27).** `get_host_load` (read) — Host-Last je Server mit Kernzahl und
+> dem ausdrücklichen Hinweis auf die zwei CPU-Konventionen, damit der Agent die Differenz selbst richtig
+> bildet. Im Katalog, `all-in-one` 44 → 45 Werkzeuge.
+>
+> **Abweichung von den geplanten Namen:** `list_active_alerts` und `get_alert_rules` sind **nicht** gebaut.
+> Beide setzen WP5 voraus (offene Meldungen als geführter Zustand mit Schließpfad) — vorher gäbe es nichts zu
+> lesen als eine Liste vergangener Benachrichtigungen, und dafür existiert `list_recent_alerts` bereits.
+>
+> Kein schreibendes Gegenstück, bewusst: Eine Schwelle anzuheben ist der Weg, auf dem ein unbequemer Alarm
+> verstummt, und diese Entscheidung gehört zu jemandem, der sich an sie erinnert.
 
 ## Reihenfolge und Abhängigkeiten
 

@@ -17,6 +17,10 @@ public class MetricsCollectorService : BackgroundService
     private readonly ILogger<MetricsCollectorService> _logger;
     private readonly Whiskers.Services.Observability.SelfMetrics.ISelfMetrics _selfMetrics;
     private readonly ConcurrentDictionary<string, AlertState> _alert = new();
+
+    // Host-level rules (Plan-0004). Held here rather than injected: the breach state is this loop's state,
+    // exactly like _alert above, and it advances on sample time so it can also be driven by a replay.
+    private readonly Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator _hostLoad = new();
     private DateTime _lastPrune;                 // OPT-2: prune at most hourly, not every 30s cycle
     private const int MaxStatsConcurrency = 8;   // OPT-11.2: bound the per-container stats fan-out
 
@@ -180,6 +184,42 @@ public class MetricsCollectorService : BackgroundService
                 {
                     try { await EvaluateServerDiskAsync(serverId, info.ServerName, diskUsed, diskTotal, alertCfg, notify); }
                     catch (Exception aex) { _logger.LogDebug(aex, "Disk alert evaluation failed for {ServerId}", serverId); }
+                }
+
+                // Host CPU and memory, and the part of the host load no container accounts for (Plan-0004
+                // WP1/WP2). This is the gap the 2026-08-26 incident fell through: alerts were evaluated per
+                // container and for disk, and dockerd runs in no container — so 8,900 measurements above 98%
+                // were recorded and none of them judged. The same evaluator is driven by the incident replay
+                // in HostLoadReplayTests, so what runs here is what was shown to catch it.
+                if (alertCfg.Enabled)
+                {
+                    try
+                    {
+                        var containerCpuSum = metrics
+                            .Where(m => m!.ServerId == serverId)
+                            .Sum(m => m!.CpuPercent);
+
+                        var sample = new Whiskers.Services.Metrics.HostLoad.HostSample(
+                            now, serverId, info.ServerName,
+                            info.CpuUsagePercent, containerCpuSum,
+                            info.MemoryUsedBytes, info.MemoryTotalBytes,
+                            info.CpuCount);
+
+                        foreach (var finding in _hostLoad.Evaluate(sample))
+                        {
+                            _logger.LogWarning("Host alert on {Server}: {Summary}", finding.ServerName, finding.Summary);
+                            await notify.SendAsync(new NotificationEvent
+                            {
+                                EventType = finding.Kind,
+                                ServerId = finding.ServerId,
+                                ServerName = finding.ServerName,
+                                ContainerName = finding.ServerName,
+                                ImageInfo = finding.Summary,
+                                Timestamp = finding.AtUtc
+                            });
+                        }
+                    }
+                    catch (Exception aex) { _logger.LogDebug(aex, "Host load evaluation failed for {ServerId}", serverId); }
                 }
             }
         }

@@ -20,6 +20,20 @@ All notable changes to Whiskers are documented here. The format follows
   the request. This affected the pre-existing container metrics too, not only the new self-metrics.
 
 ### Added
+- **A server pinned at 98% CPU is now reported — the gap the 2026-08-26 incident fell through.** Alerts were
+  evaluated per container plus one server-level rule for disk, and `dockerd` runs in no container: Whiskers
+  recorded roughly 8,900 measurements of that host over six days, practically every one above 98%, and judged
+  none of them. Sustained host CPU and memory are now evaluated, and so is the more specific signal — host
+  load that **no container accounts for**, which names the class of cause instead of only the symptom.
+
+  Comparing those two numbers means reconciling two conventions: host CPU is a percentage of the whole
+  machine, container CPU is Docker's, where one busy core is 100 and a 2-core host reaches 200. Skipping that
+  conversion fails silently in the dangerous direction — the unexplained gap comes out too small and the
+  alert never fires — so it is pinned by a test on a 4-core host, a case the incident's own numbers do not
+  expose. The rules are driven by sample time rather than the wall clock, which lets a reconstruction of that
+  week replay through them in under a second and report 20 August, 14:14 instead of six days later. The new
+  read-only `get_host_load` MCP tool answers the same question for the agent — per-container stats never
+  could, since `dockerd` appears in none of them. **MCP clients must reconnect to see it.**
 - **"What has been happening" on `/self-status`** — the last six hours of fleet-changing actions in one list:
   deploys, restarts, rule changes, agent actions, and Whiskers' own decisions (a pause, an open circuit, a
   suspended log scan) side by side, because those change the numbers with nobody having touched the fleet.
