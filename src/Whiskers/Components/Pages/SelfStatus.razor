@@ -1,12 +1,16 @@
 @page "/self-status"
 @attribute [Authorize]
 @using Whiskers.Services.Docker.Budget
+@using Whiskers.Services.LogMonitor
+@using Whiskers.Services.LogMonitor.Hygiene
 @using Whiskers.Services.Observability
 @using Whiskers.Services.Observability.SelfMetrics
 @inject ISelfMetrics SelfMetrics
 @inject IServerBudget Budget
 @inject IServerCircuitBreaker Circuit
 @inject ILoopSuspensionService Suspension
+@inject ILogMonitorService LogMonitor
+@inject ILogScanExclusions Exclusions
 @inject IServerConfigService ServerConfig
 @implements IDisposable
 
@@ -121,15 +125,54 @@ else
     </RowTemplate>
 </MudTable>
 
+@* Plan-0002 WP5 and Plan-0007 WP2.1 — the two ways a container can be missing from the log scan. They look
+   the same from outside (no findings) and mean completely different things, so they are named apart here:
+   one is a fault the scan is backing off from, the other is a deliberate exclusion. Neither is "healthy",
+   and neither is "failed". *@
+<MudText Typo="Typo.h6" Class="mt-6 mb-2">Containers not being read</MudText>
+
+@if (_suspendedContainers.Count == 0 && _exclusions.Count == 0)
+{
+    <MudText Typo="Typo.body2" Class="mb-4">Every container's logs are being scanned.</MudText>
+}
+else
+{
+    <MudTable Items="@_notRead" Dense="true" Hover="true" Class="mb-4">
+        <HeaderContent>
+            <MudTh>Container</MudTh>
+            <MudTh>Server</MudTh>
+            <MudTh>Why</MudTh>
+            <MudTh>Detail</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Container">@context.Container</MudTd>
+            <MudTd DataLabel="Server">@context.ServerName</MudTd>
+            <MudTd DataLabel="Why">
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                         Color="@(context.IsFault ? Color.Warning : Color.Info)">
+                    @(context.IsFault ? "unreadable" : "excluded")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Detail">@context.Detail</MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
 <MudText Typo="Typo.caption" Class="mt-4 d-block">
     A <b>skipped</b> server is deliberately not covered by that loop — not a fault, but no findings will come
     from it either. <b>Unjudged</b> means the loop declares no cadence, so there is no basis for a verdict;
     inventing a threshold would make this page a source of noise.
+    <b>Unreadable</b> containers are a fault the scan is backing off from and will retry;
+    <b>excluded</b> ones are deliberate — Whiskers' own access path, whose logs are the record of this scan.
+    Both still get health, metric and CVE monitoring; only their log content is skipped.
 </MudText>
 
 @code {
     private IReadOnlyList<LoopRow> _loops = Array.Empty<LoopRow>();
     private IReadOnlyList<ServerLoadRow> _servers = Array.Empty<ServerLoadRow>();
+    private IReadOnlyList<SuspendedContainer> _suspendedContainers = Array.Empty<SuspendedContainer>();
+    private IReadOnlyList<LogScanExclusion> _exclusions = Array.Empty<LogScanExclusion>();
+    private IReadOnlyList<UnreadContainerRow> _notRead = Array.Empty<UnreadContainerRow>();
     private int _stalled;
     private Timer? _timer;
 
@@ -152,6 +195,11 @@ else
             SelfMetrics.Loops(), DateTime.UtcNow, id => names.GetValueOrDefault(id, id));
         _servers = SelfStatusPresenter.ServerRows(ServerConfig.GetEnabledServers(), Budget, Circuit, Suspension);
         _stalled = _loops.Count(l => l.Verdict == LoopVerdict.Stalled);
+
+        _suspendedContainers = LogMonitor.SuspendedContainers();
+        _exclusions = Exclusions.Current();
+        _notRead = SelfStatusPresenter.UnreadContainers(
+            _suspendedContainers, _exclusions, id => names.GetValueOrDefault(id, id), DateTime.UtcNow);
     }
 
     private static Color ColourFor(LoopVerdict verdict) => verdict switch

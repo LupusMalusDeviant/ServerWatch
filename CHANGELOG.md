@@ -20,6 +20,12 @@ All notable changes to Whiskers are documented here. The format follows
   the request. This affected the pre-existing container metrics too, not only the new self-metrics.
 
 ### Added
+- **Containers whose logs are not being read are now listed, with the two reasons kept apart.** A container
+  the scan gave up on after repeated timeouts and one deliberately excluded as Whiskers' own access path look
+  identical from outside — no findings — and mean opposite things: a fault it will retry versus a decision.
+  Both appear on `/self-status` under one honest heading, "Containers not being read", with distinct labels
+  and faults listed first. Shown on separate pages, an operator would have to know both existed to be sure a
+  container was covered at all.
 - **A "Whiskers about itself" page** at `/self-status`: per loop and server, how long ago it last completed a
   cycle (as an age, never a timestamp — a clock time makes the reader do the subtraction, and doing it wrong
   is how a six-day-old failure goes unnoticed), the cycle duration, failures, and which servers a loop

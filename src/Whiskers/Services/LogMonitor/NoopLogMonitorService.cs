@@ -15,4 +15,8 @@ public sealed class NoopLogMonitorService : ILogMonitorService
     public Task<LogAlertRuleEntity> CreateRuleAsync(LogAlertRuleEntity rule) => Task.FromResult(rule);
     public Task DeleteRuleAsync(string ruleId) => Task.CompletedTask;
     public Task ToggleRuleAsync(string ruleId, bool enabled) => Task.CompletedTask;
+
+    // Nothing scans, so nothing can be suspended. An empty list is the truthful answer here — the view
+    // reports "no containers are excluded", which is correct when the module is off.
+    public IReadOnlyList<SuspendedContainer> SuspendedContainers() => Array.Empty<SuspendedContainer>();
 }

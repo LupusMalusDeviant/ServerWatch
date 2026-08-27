@@ -157,6 +157,44 @@ public class SelfStatusPresenterTests
     }
 
     [Fact]
+    public void A_container_the_scan_gave_up_on_and_one_it_excludes_are_never_given_the_same_label()
+    {
+        // Both look identical from outside — no findings — and mean opposite things. A shared label would
+        // make an operator read a fault as a decision, which is how a broken log fetch survives a review.
+        var suspended = new[]
+        {
+            new Whiskers.Services.LogMonitor.SuspendedContainer(
+                "badwolf", "c1", "burg-web", DateTime.UtcNow.AddMinutes(15), ConsecutiveTimeouts: 4)
+        };
+        var excluded = new[]
+        {
+            new Whiskers.Services.LogMonitor.Hygiene.LogScanExclusion(
+                "badwolf", "c2", "ghostunnel", "access-path", "Whiskers reaches Docker through this container.")
+        };
+
+        var rows = SelfStatusPresenter.UnreadContainers(suspended, excluded, Name, DateTime.UtcNow);
+
+        Assert.Equal(2, rows.Count);
+        Assert.True(rows[0].IsFault);                       // faults first: a symptom outranks a decision
+        Assert.Equal("burg-web", rows[0].Container);
+        Assert.Contains("4 log fetches in a row timed out", rows[0].Detail);
+
+        Assert.False(rows[1].IsFault);
+        Assert.Equal("ghostunnel", rows[1].Container);
+        Assert.Contains("reaches Docker", rows[1].Detail);
+    }
+
+    [Fact]
+    public void With_nothing_wrong_the_unread_list_is_empty()
+    {
+        // A view that always shows something is one people stop reading.
+        Assert.Empty(SelfStatusPresenter.UnreadContainers(
+            Array.Empty<Whiskers.Services.LogMonitor.SuspendedContainer>(),
+            Array.Empty<Whiskers.Services.LogMonitor.Hygiene.LogScanExclusion>(),
+            Name, DateTime.UtcNow));
+    }
+
+    [Fact]
     public void A_paused_server_is_flagged_with_its_reason()
     {
         var servers = new FakeServerConfig(Badwolf);

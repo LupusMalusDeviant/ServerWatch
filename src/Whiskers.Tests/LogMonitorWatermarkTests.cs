@@ -154,6 +154,40 @@ public sealed class LogMonitorWatermarkTests : IDisposable
     }
 
     [Fact]
+    public async Task A_suspended_container_can_be_listed_and_names_itself()
+    {
+        // Plan-0002 WP5. The suspension was announced once, and then the state lived only inside the scanner.
+        // A one-time alert scrolls out of the channel; a container nobody is reading looks exactly like one
+        // with nothing to report. So it has to be visible somewhere that is still true tomorrow — and it has
+        // to say WHICH container, because "local:c-tunnel" in a UI is a riddle, not a report.
+        var monitor = Monitor(WedgedContainer(), new FakeNotifications());
+
+        for (var i = 0; i < 3; i++)
+            await monitor.RunScanCycleAsync(CancellationToken.None);
+
+        var suspended = Assert.Single(monitor.SuspendedContainers());
+        Assert.Equal("ghostunnel", suspended.ContainerName);
+        Assert.Equal("local", suspended.ServerId);
+        Assert.True(suspended.ConsecutiveTimeouts >= 3);
+        Assert.True(suspended.Until > DateTime.UtcNow);
+    }
+
+    [Fact]
+    public async Task A_container_that_is_being_read_normally_is_not_listed_as_suspended()
+    {
+        // The other direction: if everything appeared here, the list would say nothing. A view that always
+        // shows something is a view people stop reading.
+        var docker = new FakeDocker(
+            new ContainerInfo { Id = "c-ok", Name = "burg-web", Image = "img:1", ServerId = "local", ServerName = "Badwolf" });
+        var monitor = Monitor(docker, new FakeNotifications());
+
+        for (var i = 0; i < 5; i++)
+            await monitor.RunScanCycleAsync(CancellationToken.None);
+
+        Assert.Empty(monitor.SuspendedContainers());
+    }
+
+    [Fact]
     public async Task A_healthy_container_is_never_suspended()
     {
         var docker = new FakeDocker(

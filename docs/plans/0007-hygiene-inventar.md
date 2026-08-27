@@ -85,8 +85,10 @@ Dieser Plan ist unabhängig von allen anderen und billig. Er nimmt den **Auslös
 
 **Umgesetzt: WP1–WP4 und WP-MCP.** 713/713 Tests grün. Nicht deployt, nicht gepusht.
 
-**Offen bleibt nur WP2.1 als Ansicht** (die Ausschlussliste in der Serveransicht) — Kennzahl, MCP-Bericht und
-Meldungen stehen, die Oberfläche kommt mit dem UI-Block.
+**Die Ansicht steht auf `/self-status`** — bewusst zusammen mit den vom Log-Scan *ausgesperrten* Containern
+aus Plan-0002 WP5, unter einer gemeinsamen Überschrift, aber mit getrennten Etiketten. Beide sehen von außen
+gleich aus (keine Befunde) und bedeuten das Gegenteil voneinander; getrennt dargestellt müsste man wissen,
+dass es beide Listen gibt, um sicher zu sein, dass ein Container abgedeckt ist.
 
 **Nicht abgenommen, weil es einen Server braucht:** „Ein künstlich auf 150 MB gebrachtes Log erscheint mit
 korrekter Größe und plausibler Wachstumsrate (Abweichung < 20 % gegen `du -sh`)" und „Der ausgegebene Befehl
@@ -98,7 +100,7 @@ getestet, die Übereinstimmung mit der Wirklichkeit nicht.
 | WP1.1/1.2 Zugriffspfad erkennen | ✅ | `LogScanExclusions.cs` — Abgleich Host **und** Port gegen die Port-Bindings |
 | WP1.3 Manuelle Übersteuerung | ✅ | `SERVERWATCH_SELF_CONTAINERS` unverändert, mit Vorrang |
 | WP1.4 Nur Log-Scan | ✅ | Ausschluss greift in `ScanServerAsync`; Health/Metriken/CVE unberührt |
-| WP2.1 Sichtbar mit Begründung | ✅ *ohne UI* | `Current()` + `get_log_hygiene_report`; die Serveransicht fehlt noch |
+| WP2.1 Sichtbar mit Begründung | ✅ | `Current()`, `get_log_hygiene_report` und `/self-status` → „Containers not being read" |
 | WP2.2 Kennzahl | ✅ | `whiskers_log_scan_exclusions{server,reason}` auf `/metrics` |
 | WP-MCP.1/.2 | ✅ | `get_log_hygiene_report` (read), im Katalog, `logmonitor` 3 → 4 Werkzeuge |
 | WP3.1 Tägliche Prüfung | ✅ | `LogHygieneMonitor`, 24 h, ein Inspect + ein `stat` je Container, unter dem Budget |

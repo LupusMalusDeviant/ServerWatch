@@ -48,6 +48,12 @@ public sealed record ServerLoadRow(
     bool Paused,
     string? PauseReason);
 
+/// <summary>A container whose logs are not being read, and why.</summary>
+/// <param name="IsFault">True when the scan gave up after repeated timeouts (a fault it will retry), false
+/// when the container is deliberately excluded. Both look identical from outside — no findings — and mean
+/// opposite things, so they must never share a label.</param>
+public sealed record UnreadContainerRow(string Container, string ServerName, bool IsFault, string Detail);
+
 /// <summary>
 /// Turns the self-metrics into rows a page can render (Plan-0003 WP4).
 ///
@@ -129,6 +135,35 @@ public static class SelfStatusPresenter
                 paused.ContainsKey(server.Id),
                 paused.GetValueOrDefault(server.Id));
         }).ToList();
+    }
+
+    /// <summary>The two ways a container can be missing from the log scan, merged into one list
+    /// (Plan-0002 WP5 / Plan-0007 WP2.1).
+    ///
+    /// <para>They belong together because from outside they are indistinguishable — no findings — and they
+    /// mean opposite things: one is a fault the scan is backing off from, the other is a deliberate
+    /// exclusion. Shown apart, a reader has to know both pages exist to be sure a container is covered.
+    /// Shown together under one honest label, "not being read" is answerable at a glance. Faults come first:
+    /// an exclusion is a decision, a fault is a symptom.</para></summary>
+    public static IReadOnlyList<UnreadContainerRow> UnreadContainers(
+        IReadOnlyList<LogMonitor.SuspendedContainer> suspended,
+        IReadOnlyList<LogMonitor.Hygiene.LogScanExclusion> exclusions,
+        Func<string, string> serverName,
+        DateTime now)
+    {
+        var rows = suspended.Select(s => new UnreadContainerRow(
+            s.ContainerName, serverName(s.ServerId), IsFault: true,
+            $"{s.ConsecutiveTimeouts} log fetches in a row timed out; retrying in {Age(s.Until - now).Replace(" ago", "")}."))
+            .ToList();
+
+        rows.AddRange(exclusions.Select(e => new UnreadContainerRow(
+            e.ContainerName, serverName(e.ServerId), IsFault: false, e.Detail)));
+
+        return rows
+            .OrderByDescending(r => r.IsFault)
+            .ThenBy(r => r.ServerName, StringComparer.Ordinal)
+            .ThenBy(r => r.Container, StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>An age in the shortest form that is still unambiguous. Rounded down deliberately: "3h" for

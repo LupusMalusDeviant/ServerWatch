@@ -102,7 +102,11 @@ Dieser Plan setzt **zwingend** auf Plan-0001 auf. Ohne echten Abbruch entlastet 
 >
 > ⚠️ **Beinahe-Fehler, festgehalten:** Mein erster Testentwurf bestand aus **fünf Zusicherungen, die alle nur Schweigen prüften** — kein einziger verlangte, dass die Aufsicht anschlägt. Gegen einen Wächter, der nie meldet, wären alle fünf grün gewesen. Erst der Gegenbeweis machte es sichtbar: Aufsicht blind geschaltet ⇒ **nur der eine** Test rot, der das Anschlagen fordert, die anderen fünf blieben grün. Das ist heute Nacht der dritte Test, der nicht gemessen hat, was er behauptete.
 >
-> **Offen aus WP5:** WP5.1/WP5.2 (Darstellung ausgesperrter Container in der Oberfläche samt Alter des letzten Erfolgs) — reine UI-Arbeit. Die Zahlen dafür liegen jetzt in `ISelfMetrics`. Und: die Aufsicht muss beim Not-Aus (SP-5) ausdrücklich **nicht** pausierbar sein; das ist in Plan-0005 WP0 als eigenes Arbeitspaket vermerkt.
+> 🟢 **WP5.1/WP5.2 erledigt** (2026-08-27). `LogMonitorService` gibt seinen Aussetzungszustand jetzt über `ILogMonitorService.SuspendedContainers()` nach außen — mit **Containernamen**, denn nach der Aussperrung wird der Container nicht mehr gescannt und sein Name lässt sich in der Live-Liste nicht mehr verlässlich nachschlagen; `badwolf:abc123f` in einer Oberfläche ist ein Rätsel, kein Bericht. Angezeigt auf `/self-status` unter „Containers not being read".
+>
+> **Zusammen mit Plan-0007 WP2.1 dargestellt, und das ist Absicht.** Ein ausgesperrter und ein absichtlich ausgeschlossener Container sehen von außen identisch aus — keine Befunde — und bedeuten das Gegenteil voneinander: das eine ist ein Fehler, von dem der Scan zurückweicht und den er wieder versucht, das andere eine Entscheidung. Getrennt dargestellt müsste ein Betreiber wissen, dass es beide Seiten gibt, um sicher zu sein, dass ein Container überhaupt abgedeckt ist. Gemeinsam unter der ehrlichen Überschrift „wird nicht gelesen", aber mit **unterschiedlichen Etiketten**, ist die Frage auf einen Blick beantwortet. Fehler stehen oben: ein Symptom sticht eine Entscheidung. Ein Test verlangt genau diese Trennung; Gegenprobe mit einem gemeinsamen Etikett → rot.
+>
+> Die Aufsicht ist beim Not-Aus (SP-5) ausdrücklich **nicht** pausierbar — umgesetzt und per Test festgehalten (Plan-0005 WP0).
 
 ### WP-MCP: Agenten-Oberfläche
 

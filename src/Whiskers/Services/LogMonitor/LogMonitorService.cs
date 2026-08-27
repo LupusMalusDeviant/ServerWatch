@@ -37,6 +37,10 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     private readonly ConcurrentDictionary<string, DateTime> _suspendedUntil = new();
     private readonly ConcurrentDictionary<string, int> _backoffStep = new();
 
+    // Container names, kept for the status view: a suspended container is no longer scanned, so its name
+    // cannot reliably be looked up in the live list afterwards — and "badwolf:abc123f" is a riddle, not a report.
+    private readonly ConcurrentDictionary<string, string> _suspendedNames = new();
+
     /// <summary>Timeouts in a row before a container is taken out of the scan (Plan-0002 WP3).</summary>
     private const int TimeoutsBeforeSuspension = 3;
 
@@ -388,6 +392,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         var step = _backoffStep.AddOrUpdate(key, 0, (_, n) => Math.Min(n + 1, SuspensionBackoff.Length - 1));
         var pause = SuspensionBackoff[step];
         _suspendedUntil[key] = DateTime.UtcNow + pause;
+        _suspendedNames[key] = container.Name;
 
         _logger.LogWarning("Log scan for {Container} on {Server} suspended for {Pause} after {Timeouts} timeouts",
             container.Name, container.ServerName, pause, timeouts);
@@ -429,6 +434,33 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
 
     /// <summary>Identifies a container across the fleet. Container ids are unique per host only, so every
     /// per-container map has to be keyed by server + id (same scheme as ContainerHealthMonitor).</summary>
+    /// <summary>The containers the scan is currently not reading, for the status view (Plan-0002 WP5).
+    ///
+    /// <para>Names are remembered alongside the key: once a container is suspended the scan stops looking at
+    /// it, so the container list is not a reliable place to look the name up again — and "server:abc123f" in
+    /// a UI is a riddle, not a report.</para></summary>
+    public IReadOnlyList<SuspendedContainer> SuspendedContainers()
+    {
+        var now = DateTime.UtcNow;
+
+        return _suspendedUntil
+            .Where(kv => kv.Value > now)
+            .Select(kv =>
+            {
+                var parts = kv.Key.Split(':', 2);
+                var serverId = parts[0];
+                var containerId = parts.Length > 1 ? parts[1] : string.Empty;
+                return new SuspendedContainer(
+                    serverId, containerId,
+                    _suspendedNames.GetValueOrDefault(kv.Key, containerId),
+                    kv.Value,
+                    _consecutiveTimeouts.GetValueOrDefault(kv.Key));
+            })
+            .OrderBy(s => s.ServerId, StringComparer.Ordinal)
+            .ThenBy(s => s.ContainerName, StringComparer.Ordinal)
+            .ToList();
+    }
+
     public static string CompositeKey(ContainerInfo container) => $"{container.ServerId}:{container.Id}";
 
     /// <summary>The server part of a <see cref="CompositeKey"/>.</summary>
