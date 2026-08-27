@@ -60,6 +60,17 @@ public sealed class SelfMetrics : ISelfMetrics
         perServer.AddOrUpdate(serverId, 1, (_, v) => v + 1);
     }
 
+    public void Restore(string loop, string serverId, DateTime? lastSuccess, TimeSpan? interval)
+    {
+        var s = _loops.GetOrAdd(Key(loop, serverId), _ => new LoopState());
+
+        // Never overwrite a live observation. This runs at startup, but a loop with a short cadence can
+        // already have completed a cycle by the time the restore reaches it, and a stale timestamp from disk
+        // would make a working loop look older than it is.
+        if (s.LastSuccess is null && lastSuccess is not null) s.LastSuccess = lastSuccess;
+        if (s.ExpectedInterval is null && interval is not null) s.ExpectedInterval = interval;
+    }
+
     public IReadOnlyList<LoopHealth> Loops() =>
         _loops
             .Select(kv =>

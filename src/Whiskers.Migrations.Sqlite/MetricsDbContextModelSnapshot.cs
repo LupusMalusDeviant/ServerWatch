@@ -287,6 +287,53 @@ namespace Whiskers.Migrations
                     b.ToTable("ScheduledTasks");
                 });
 
+            modelBuilder.Entity("Whiskers.Models.SelfMetricSampleEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Cycles")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("ExpectedIntervalSeconds")
+                        .HasColumnType("REAL");
+
+                    b.Property<long>("Failures")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("LastDurationMs")
+                        .HasColumnType("REAL");
+
+                    b.Property<DateTime?>("LastSuccessUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Loop")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ServerId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SkipReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Skips")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("TakenAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TakenAtUtc");
+
+                    b.HasIndex("Loop", "ServerId", "TakenAtUtc");
+
+                    b.ToTable("SelfMetricSamples");
+                });
+
             modelBuilder.Entity("Whiskers.Models.TaskRunHistoryEntity", b =>
                 {
                     b.Property<long>("Id")

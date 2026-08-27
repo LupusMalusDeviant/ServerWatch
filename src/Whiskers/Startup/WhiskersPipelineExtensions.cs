@@ -473,6 +473,17 @@ public static class WhiskersPipelineExtensions
         var suspensions = services.GetService<Whiskers.Services.Observability.ILoopSuspensionService>();
         var now = DateTime.UtcNow;
 
+        if (loops is not null)
+        {
+            // Plan-0003 WP6.3 — cardinality, tracked as a number rather than assumed. This is how you notice
+            // between releases that a label was added which multiplies the series count: the failure mode of a
+            // time-series database is not an error, it is silently becoming too expensive to keep.
+            var seriesCount = loops.Loops().Count * 6 + loops.Counters().Sum(c => c.Value.Count);
+            sb.AppendLine("# HELP whiskers_self_series_total How many whiskers_self_* series this endpoint produces. Compare between releases: growth beyond server and loop count means a label was added that multiplies cardinality.");
+            sb.AppendLine("# TYPE whiskers_self_series_total gauge");
+            sb.AppendLine($"whiskers_self_series_total {seriesCount}");
+        }
+
         if (exclusions is not null)
         {
             // Plan-0007 WP2.2. The number to watch is not its value but its MOVEMENT: exclusions that appear

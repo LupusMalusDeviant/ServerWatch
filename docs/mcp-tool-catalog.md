@@ -42,6 +42,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 | `get_server_logs` | read | Get system logs from a server via journalctl. Can filter by service name. |
 | `get_server_metrics` | read | Get historical CPU/memory metrics for a server over a time period. |
 | `get_update_status` | read | Check which containers have image updates available. |
+| `get_whiskers_self_status` | read | Report whether Whiskers itself is still working: for every background loop and server, how long ago it last completed a cycle, how long a cycle takes, how many failed, and which servers it deliberately skips and why — plus the per-server load budget and circuit-breaker state. Use this before trusting an absence of findings: a loop that has stopped produces no alerts at all, which looks exactly like a fleet with nothing wrong. Read-only. |
 | `list_containers` | read | List all Docker containers across all configured servers. Returns container name, image, state, health, server, and compose project. |
 | `list_databases` | read | List all databases in a database container. |
 | `list_firewall_rules` | read | List firewall (UFW) rules on a server. |
@@ -135,7 +136,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 
 | Level | Tools |
 |---|---|
-| read | 39 |
+| read | 40 |
 | write | 33 |
 | admin | 3 |
-| **total** | **75** |
+| **total** | **76** |

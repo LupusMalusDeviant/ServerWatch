@@ -79,6 +79,9 @@ public class MetricsDbContext : DbContext
     public DbSet<CveFirstSeenEntity> CveFirstSeen => Set<CveFirstSeenEntity>();
     public DbSet<NotificationEntity> Notifications => Set<NotificationEntity>();
 
+    /// <summary>Minute-by-minute readings of Whiskers' own loop health (Plan-0003 WP3.2).</summary>
+    public DbSet<SelfMetricSampleEntity> SelfMetricSamples => Set<SelfMetricSampleEntity>();
+
     public MetricsDbContext(DbContextOptions<MetricsDbContext> options) : base(options) { }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -151,6 +154,14 @@ public class MetricsDbContext : DbContext
         {
             e.HasIndex(x => x.IdentityKey).IsUnique();
             e.HasIndex(x => x.CveId);
+        });
+
+        modelBuilder.Entity<SelfMetricSampleEntity>(e =>
+        {
+            // Queried two ways: "the latest reading per loop and server" on boot, and "this loop's history"
+            // for the view. Both start from the timestamp, so it leads the composite index.
+            e.HasIndex(x => x.TakenAtUtc);
+            e.HasIndex(x => new { x.Loop, x.ServerId, x.TakenAtUtc });
         });
 
         modelBuilder.Entity<NotificationEntity>(e =>

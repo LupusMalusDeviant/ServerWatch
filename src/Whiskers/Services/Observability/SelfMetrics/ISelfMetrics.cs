@@ -50,6 +50,17 @@ public interface ISelfMetrics
     /// a discarded duplicate. Keyed by a short, low-cardinality name.</summary>
     void Count(string name, string serverId);
 
+    /// <summary>Seeds what was known before a restart (Plan-0003 WP3.2).
+    ///
+    /// <para>Without this, an empty <see cref="LoopHealth.LastSuccess"/> after a restart is indistinguishable
+    /// from a loop that has never succeeded. A supervisor would then either alarm on every restart or have to
+    /// ignore fresh loops entirely — one cries wolf, the other is deaf during the window when a bad deploy is
+    /// most likely to have broken something.</para>
+    ///
+    /// <para>Only fills gaps: anything the running process has already observed wins, because a live reading
+    /// is newer than anything on disk.</para></summary>
+    void Restore(string loop, string serverId, DateTime? lastSuccess, TimeSpan? interval);
+
     IReadOnlyList<LoopHealth> Loops();
 
     /// <summary>Named counters, as name → server → value.</summary>

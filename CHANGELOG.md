@@ -7,6 +7,16 @@ All notable changes to Whiskers are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Whiskers' own loop health survives a restart, and the agent can ask about it.** The self-metrics are
+  written to a new `SelfMetricSamples` table once a minute (additive migration, both providers) and restored
+  on boot. The history is the smaller half of the point: after a restart the in-memory view is empty, and an
+  empty "last success" is indistinguishable from "never succeeded" — so the supervisory rule would have had to
+  either alarm on every restart or stay quiet about fresh loops, and the second is exactly the window in which
+  a bad deploy has most likely broken something. A live reading always beats the stored one, nothing older
+  than a week is restored, and there is a test specifically for the direction that matters most: a restart
+  must not make a genuinely stalled loop look alive. Sampling costs zero Docker calls, which is pinned by a
+  test. The new read-only `get_whiskers_self_status` MCP tool reports the same thing in prose — including
+  whether an absence of findings can be taken at face value. **MCP clients must reconnect to see it.**
 - **Container logs growing without a rotation limit are now reported before the disk fills.** A daily survey
   reads each container's log driver configuration and the size of its log file, works out the growth per day
   from consecutive readings, and judges it **against the free space on that host** — 150 MB is a footnote next

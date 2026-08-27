@@ -163,6 +163,7 @@ public static class WhiskersHostingExtensions
                 sp.GetRequiredService<ILogger<Whiskers.Services.LogMonitor.Hygiene.LogScanExclusions>>(),
                 Whiskers.Services.LogMonitor.LogMonitorService.ResolveSelfServerIds(
                     sp.GetRequiredService<Whiskers.Services.ServerConfig.IServerConfigService>())));
+        builder.Services.AddHostedService<Whiskers.Services.Observability.SelfMetrics.SelfMetricsRecorder>();
         builder.Services.AddHostedService<Whiskers.Services.Observability.ScanSupervisor>();
         builder.Services.AddHostedService<Whiskers.Services.Observability.SuspensionReminder>();
         builder.Services.AddSingleton<Whiskers.Services.Docker.Budget.IServerBudget, Whiskers.Services.Docker.Budget.ServerBudget>();

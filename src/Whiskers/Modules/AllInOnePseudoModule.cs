@@ -35,6 +35,7 @@ public sealed class AllInOnePseudoModule : IWhiskersModule
     {
         typeof(ContainerTools), typeof(ServerTools), typeof(MonitoringTools),
         typeof(NetworkTools), typeof(DatabaseTools), typeof(LoopSuspensionTools),
+        typeof(SelfStatusTools),
         // Scheduler/Log/Cve tools → their modules; Cloud+Hetzner tools → Modules/CloudControl;
         // AgentTools (instruct_agent) → Modules/Agent (RoadToSAP Phase 1).
     };

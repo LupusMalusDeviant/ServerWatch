@@ -120,6 +120,38 @@ Die wichtigste Einzelkennzahl ist nicht ein Fehlerzähler, sondern **das Alter d
 
 **Abnahme:** Der Agent erkennt einen gestoppten Loop allein über dieses Werkzeug. Gegenprobe am **laufenden** Server: `tools/list` enthält die Werkzeuge mit der erwarteten Stufe.
 
+## 🟢 Stand der Umsetzung (2026-08-27)
+
+**Umgesetzt: WP1, WP2, WP3 vollständig, WP6.2/6.3, WP-MCP.** 726/726 Tests grün. Nicht deployt, nicht gepusht.
+
+| Paket | Stand | Nachweis |
+|---|---|---|
+| WP1, WP2 | ✅ | `ISelfMetrics`, in alle fünf Schleifen verdrahtet, Skips mit Grund |
+| WP3.1 `/metrics` | ✅ | `whiskers_self_*` hinter dem Scrape-Token |
+| WP3.2 Tabelle + Migration | ✅ | `SelfMetricSamples`, additive Migration in **beiden** Assemblies (nur `CreateTable` + 2 Indizes) |
+| WP3.3 Aufbewahrung | ✅ | eigener Prune (30 Tage) im Recorder, **nicht** an der Metrik-Aufbewahrung hängend |
+| WP6.2 Null Docker-Aufrufe | ✅ | Test verlangt `Empty(docker.CallsInOrder)` über Sample + Restore |
+| WP6.3 Zeitreihenzahl | ✅ | `whiskers_self_series_total` |
+| WP-MCP | ✅ | `get_whiskers_self_status`, read; Test verlangt, dass eine tote Schleife **im Text allein** erkennbar ist |
+| WP4 Ansicht, WP5 Zeitachse | ⬜ offen | UI-Block |
+| WP6.1 Leerlaufmessung | ⬜ offen | braucht einen laufenden Host über 30 min |
+
+### Die Persistenz löst ein zweites, größeres Problem
+
+Der Plan begründet WP3.2 mit „überlebt Neustarts". Beim Bauen zeigte sich der wichtigere Grund: Nach einem
+Neustart ist der Speicher leer, und ein leeres „letzter Erfolg" ist **nicht unterscheidbar** von „hat nie
+funktioniert". Die Aufsichtsregel aus WP2 hätte damit nur schlechte Optionen — bei jedem Neustart Alarm
+schlagen, oder frische Schleifen ignorieren, also genau in dem Fenster schweigen, in dem ein schlechter
+Deploy am wahrscheinlichsten etwas kaputtgemacht hat.
+
+Der Restore ist deshalb an drei Regeln gebunden, die jeweils ein Test festhält: eine **lebende Messung
+schlägt immer die Platte** (sonst lässt eine alte Zeitmarke eine laufende Schleife alt aussehen), **nichts
+älter als sieben Tage** wird zurückgeholt (sonst wirkt eine seit einem Monat tote Schleife frisch), und — der
+wichtigste — **ein Neustart darf einen echten Stillstand nicht verdecken**. Für diese Richtung gibt es einen
+eigenen Test; ein Restore, der jeden Neustart gesund aussehen ließe, wäre schlimmer als gar keiner.
+
+**Gegenbeweis geführt:** Restore abgeschaltet → der Neustart-Test wird rot.
+
 ## Reihenfolge und Abhängigkeiten
 
 ```

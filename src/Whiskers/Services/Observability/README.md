@@ -8,10 +8,30 @@ Two separate things live here: what Whiskers **did** (governance recording, belo
 | File | Purpose |
 |---|---|
 | `SelfMetrics/` | Loop health per (loop, server): last success, last attempt, cycle duration, failures, and **skips with a reason**. Exported as `whiskers_self_*` on `/metrics`. See [`SelfMetrics/ISelfMetrics.cs`](SelfMetrics/ISelfMetrics.cs). |
+| `SelfMetrics/SelfMetricsRecorder.cs` | Writes those numbers to `SelfMetricSamples` once a minute, restores them on boot, and prunes them on their own retention. |
 | `ScanSupervisor.cs` | Watches the watchers: raises `monitoring_stalled` when a loop has not completed a cycle for a server in three of its own intervals — whatever the cause. |
 | `ILoopSuspensionService.cs` / `LoopSuspensionService.cs` | The emergency stop: pause one server's background checks. Announced, time-bounded, fail-open, not persisted across restarts (deliberately — see the file). |
 | `SuspensionReminder.cs` | Keeps saying that a paused server is still unwatched, every 24 h, for as long as it stays paused. |
 | `ServerSuspendedException.cs` | What a background caller gets when it reaches a paused server. Its own type so a pause is never counted as a failure. |
+
+### Why the numbers are on disk
+
+History is the smaller half of it. The larger half: after a restart the in-memory view is empty, and an empty
+"last success" is indistinguishable from "never succeeded". A supervisor facing that has only bad options —
+alarm on every restart, or stay quiet about fresh loops, which is exactly the window in which a bad deploy has
+most likely broken something.
+
+So `SelfMetricsRecorder` restores the last known success on boot, under three rules that tests hold in place:
+
+- **A live reading always beats the one from disk.** A short-cadence loop can complete a cycle before the
+  restore reaches it, and a stale timestamp winning there would manufacture the false alarm this prevents.
+- **Nothing older than a week is restored.** Beyond that the reading says nothing about now, and a loop dead
+  for a month would come back looking recently alive.
+- **A restart must not hide a real stall.** There is a test for that direction specifically — a restore that
+  made every restart look healthy would be worse than no restore at all.
+
+The sampling costs one database write per loop and server per minute and **zero Docker calls** — pinned by a
+test, because a self-measurement that adds load to what it measures is the same mistake it exists to reveal.
 
 ### The emergency stop and its limits
 
