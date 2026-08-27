@@ -126,7 +126,7 @@ Jedes Paket-PRD trägt dafür eine `FR-MCP`-Zeile, jeder Plan ein `WP-MCP`-Arbei
 
 ## 5a. Stand 2026-08-27 und was noch einen Server braucht
 
-**Wellen 0 bis 3 sind im Kern umgesetzt** (835 Tests, nichts deployt). Erledigt: SP-1 (Abbruch, Lastbudget,
+**Wellen 0 bis 3 sind umgesetzt und seit 2026-08-27 auf Badwolf deployt** (864 Tests, Stand `bb1216d`). Erledigt: SP-1 (Abbruch, Lastbudget,
 Circuit), SP-2, SP-3 (bis auf die Leerlaufmessung), SP-4, SP-5, SP-6 (WP1/WP2/WP5), SP-7, MCP. **GAP-1 bis
 GAP-5 sind unberührt** — das sind Wochen, keine Stunden.
 
@@ -153,8 +153,38 @@ die Messung an der Wirklichkeit, und die braucht einen Deploy:
 | SP-4 | `stress-ng` auf dem Host → Meldung mit korrekter Ursachenklasse; künstlich verlangsamter Proxy → Latenzmeldung |
 | SP-4 | **Fehlalarmquote** — der synthetische Prüfstand beweist, dass die Regeln anschlagen, nicht dass sie in einer normalen Woche schweigen |
 | SP-5 | Wirksamkeit des Not-Aus am Zielserver: 0 neue Anfragen binnen 60 s |
-| SP-7 | Gemessene Loggröße gegen `du -sh` (< 20 % Abweichung); Behebungsbefehl läuft ohne Nacharbeit |
-| alle | `tools/list` am laufenden Server enthält die neuen Werkzeuge mit der erwarteten Stufe |
+| ~~SP-7~~ | 🟢 **erbracht 2026-08-27** — siehe unten |
+| ~~alle~~ | 🟢 **erbracht 2026-08-27** — `tools/list` am laufenden Server liefert 78 Werkzeuge (vorher 67), die elf neuen sind dabei |
+
+### 🟢 SP-7 abgenommen (2026-08-27, Badwolf)
+
+**Größenmessung.** `stat -c %s` gegen `du --block-size=1`, alle zehn laufenden Container:
+
+| Container | `stat` | `du` | Abweichung |
+|---|---|---|---|
+| authentik-worker-1 | 124.890.703 | 124.895.232 | +0,0 % |
+| authentik-server-1 | 76.599.145 | 76.603.392 | +0,0 % |
+| mcpmcp | 9.795.724 | 9.801.728 | +0,1 % |
+| serverwatch | 4.213.088 | 4.218.880 | +0,1 % |
+| node-exporter | 19.171 | 20.480 | +6,8 % |
+| nginx-proxy-manager | 18.271 | 20.480 | +12,1 % |
+
+Maximum 12,1 % gegen ein Kriterium von 20 %, und die Abweichung ist reine Blockrundung: Sie ist dort am
+größten, wo die Datei am kleinsten ist, und bei den großen Dateien praktisch null. Genau die richtige
+Richtung — bei den Containern, auf die es ankommt, stimmt die Zahl auf Promille.
+
+**Behebungsbefehl.** Für die beiden Container, die ihn brauchen, sind alle drei Compose-Marken gesetzt
+(`project=authentik`, `service=worker|server`, `working_dir=/opt/authentik`) → Whiskers erzeugt den
+Compose-Block plus `cd /opt/authentik && docker compose up -d --force-recreate worker`. Läuft ohne
+Nacharbeit.
+
+**Der Wächter schlägt an, nicht nur der Test.** Im Feld gemeldet:
+`Unbounded log on LupusMalus (Infomaniak)/ghostunnel: 1.66 GB`. Dieselbe Container-Instanz, die am selben Tag
+die neue CVE-Veraltungsmetrik markiert hat (Scandaten vom 29. Juli). Zwei unabhängig gebaute Signale zeigen
+auf denselben Container — offen, warum sein CVE-Scan seit vier Wochen nicht läuft.
+
+Nebenbefund: `authentik-worker-1` (124 MB) und `authentik-server-1` (76 MB) laufen **ganz ohne Log-Limit**
+(`LogConfig.Config` ist leer), `mcpmcp` dagegen mit `max-size=10m, max-file=3`.
 
 Der letzte Punkt betrifft alle Pakete gemeinsam und hat einen konkreten Anlass: Von 0.12.0 bis 0.13.0 hat der
 MCP-Server **null** Werkzeuge ausgeliefert, und kein Test, kein Log und kein Alarm hat es gesagt. Der
