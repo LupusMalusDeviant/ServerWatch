@@ -2,7 +2,7 @@ namespace Whiskers.Services.Metrics.HostLoad;
 
 /// <summary>What the evaluator decided about one sample.</summary>
 /// <param name="AtUtc">The time of the <em>sample</em>, not of the evaluation. That distinction is what makes
-/// a replay meaningful: a six-day series pushed through in a second must still report 20 August, 14:17.</param>
+/// a replay meaningful: a six-day series pushed through in a second must still report 20 August, 14:14.</param>
 public sealed record HostLoadFinding(
     DateTime AtUtc, string ServerId, string ServerName, string Kind, string Summary, double Value, double Threshold);
 
@@ -19,7 +19,8 @@ public sealed class HostLoadThresholds
     public double UnexplainedCpuPercent { get; init; } = 40;
 
     /// <summary>How long a breach must last before it is reported. A build peak is not an incident; six days
-    /// at 98% is. Ten minutes is short enough to have caught 2026-08-26 by 14:17.</summary>
+    /// at 98% is. Ten minutes is short enough to have caught 2026-08-26 by 14:14 — the incident report puts a
+    /// host threshold at 14:17, so this is if anything a little quicker.</summary>
     public TimeSpan SustainedFor { get; init; } = TimeSpan.FromMinutes(10);
 
     /// <summary>How long before the same open finding is repeated. It escalates rather than repeats — the

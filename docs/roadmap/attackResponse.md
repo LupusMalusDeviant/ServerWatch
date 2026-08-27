@@ -2,7 +2,7 @@
 
 > **Ziel:** Whiskers soll einen laufenden Angriff auf einen verwalteten Dienst **erkennen, als Incident führen, beweissicher dokumentieren und die Gegenmaßnahme regieren** — statt wie heute eine einzelne `warning`-Zeile abzusetzen und danach zehn Minuten zu schweigen.
 >
-> **Produkt-Einordnung:** Das ist der Schritt von „Whiskers meldet" zu „Whiskers schützt". Es ist die logische Fortsetzung der bestehenden Differenzierer (MCP + handelnder Agent mit Guardrails/Approvals, SSH-key-freier Betrieb, CVE-Scanning) und hat bei Portainer/Coolify/Dockge kein Äquivalent. Siehe [product/POSITIONING.md](../product/POSITIONING.md) und [beatPortainerCoolify.md](beatPortainerCoolify.md).
+> **Produkt-Einordnung:** Das ist der Schritt von „Whiskers meldet" zu „Whiskers schützt". Es ist die logische Fortsetzung der bestehenden Differenzierer (MCP + handelnder Agent mit Guardrails/Approvals, SSH-key-freier Betrieb, CVE-Scanning) und hat bei Portainer/Coolify/Dockge kein Äquivalent. Siehe [product/POSITIONING.md](../product/POSITIONING.md).
 >
 > **Aufwand:** grob 8–14 Arbeitstage über alle Pakete, sinnvoll in drei Wellen schneidbar. **Risiko:** mittel — zwei additive DB-Migrationen (beide Assemblies!), ein neuer anonymer HTTP-Endpunkt, und mit AR-5 erstmals Aktionen, die Verfügbarkeit kosten können.
 
@@ -255,7 +255,7 @@ AR-1 und AR-3 zusammen sind der kleinste sinnvolle Schnitt. Alles davor ist Vora
 1. **`whiskers-guard` — eigenes Repo oder mit im Produkt-Repo?** Eigenes Repo entkoppelt die Release-Zyklen, kostet aber eine zweite Pipeline (Multi-Arch, Trivy-Gate, cosign, SBOM — alles wie in `release.yml`).
 2. **Ist AR-5 Stufe 5 (Protective Shutdown) überhaupt Teil des Produkts** oder bleibt es beim Sidecar? Argument dafür: ohne es ist die Kette unvollständig. Argument dagegen: eine Verfügbarkeits-kostende Aktion in einem Verwaltungswerkzeug ist ein Support-Risiko.
 3. **Maschinen-Token-Modell** — pro Sidecar, pro Server oder pro Flotte? Empfehlung: pro Sidecar, an `serverId` gebunden, rotierbar.
-4. **Zielversion:** AR-1/AR-3 sind additiv und 1.0-verträglich; AR-5/AR-7 sind eher 1.1. Siehe die offenen DoD-Punkte in [roadTo1_0.md](roadTo1_0.md).
+4. **Zielversion:** AR-1/AR-3 sind additiv und 1.0-verträglich; AR-5/AR-7 sind eher 1.1.
 
 ---
 
@@ -275,8 +275,6 @@ AR-1 und AR-3 zusammen sind der kleinste sinnvolle Schnitt. Alles davor ist Vora
 
 ## 9. Querverweise
 
-- [missingFeatures.md](missingFeatures.md) — F6 (Docker-Events-Stream) ist die technische Vorarbeit für das Log-Streaming in AR-2
-- [roadTo1_0.md](roadTo1_0.md) — Einordnung gegenüber den offenen 1.0-DoD-Punkten
 - [../ARCHITECTURE.md](../ARCHITECTURE.md) — die drei Ebenen, Mesh + mTLS; `whiskers-guard` ist eine vierte Komponente in dieser Topologie
 - [../adr/0004-postgres-provider-support.md](../adr/0004-postgres-provider-support.md) — warum jede Migration in **zwei** Assemblies muss
 - [../product/POSITIONING.md](../product/POSITIONING.md) — „Whiskers meldet" → „Whiskers schützt"

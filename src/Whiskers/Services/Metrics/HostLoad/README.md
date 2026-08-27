@@ -32,11 +32,11 @@ either way.
 ## Driven by sample time, never the wall clock
 
 Every threshold here advances on the timestamp inside the sample. That is what lets `HostLoadReplayTests`
-push a whole week through the rules in under a second and still get findings dated 20 August, 14:17. A rule
+push a whole week through the rules in under a second and still get findings dated 20 August, 14:14 — twelve minutes after the step, where the incident ran for six days. A rule
 that consulted `DateTime.UtcNow` could not be replayed — and a rule that cannot be replayed cannot be shown
 to catch the incident it was written for.
 
 The replay series is **reconstructed from the incident report's documented values, not recorded**. It proves
 the rules fire; it cannot prove they stay quiet through a normal week, because it has none of the texture
 that produces false alarms. That second question needs the real series and is still open — see
-[Plan-0004](../../../../docs/plans/0004-host-und-baseline-alarme.md).
+[Plan-0004](../../../../../docs/plans/0004-host-und-baseline-alarme.md).

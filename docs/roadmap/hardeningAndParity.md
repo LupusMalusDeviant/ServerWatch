@@ -128,6 +128,3 @@ Jedes Paket-PRD trägt dafür eine `FR-MCP`-Zeile, jeder Plan ein `WP-MCP`-Arbei
 
 - [Vorfallsbericht 2026-08-26](../reviews/2026-08-26-logmonitor-dockerd-cpu-incident.md) — Ursache, Messwerte, Prüfkriterium
 - [attackResponse.md](attackResponse.md) — der Angriffs-Strang; AR-1 (Incident-Objekt) trägt auch die selbstverschuldeten Vorfälle
-- [beatPortainerCoolify.md](beatPortainerCoolify.md) — Phase 0 ist um SP-1/SP-2 zu ergänzen; die MCP-Prämisse ist überholt (siehe PRD-0012)
-- [kubernetesImplement.md](kubernetesImplement.md) — Track B.3 ist Teilmenge von GAP-1
-- [missingFeatures.md](missingFeatures.md) — F5 (Git-Deploy) ist Ausgangspunkt für GAP-3
