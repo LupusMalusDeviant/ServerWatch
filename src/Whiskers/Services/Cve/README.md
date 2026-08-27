@@ -17,6 +17,24 @@ Findings are **de-duplicated per CVE-ID** for display (one CVE > all real affect
 | `ICveAgeStore.cs` / `CveAgeStore.cs` | Persists (SQLite, `CveFirstSeen` table) when each vulnerability instance was first detected, so the "open for N days" age survives restarts. Recorded after each scan cycle; read when grouping. |
 | `NoopCveServices.cs` | Core no-op defaults (`NoopCveFindingsStore` / `NoopCveMonitorService` / `NoopCveAgeStore`) for when the **Cve module** is off — the findings store + monitor are read by the Core Dashboard/ContainerDetail/Settings pages, which then show no CVE data. Real services win by last-registration when on (RoadToSAP Phase 1). |
 
+## Results of a server that was removed (2026-08-27)
+
+`PruneServer` only ever runs for servers that still exist, so the results of a server **deleted from the
+fleet** were never looked at again. Found in the field: a server removed in July was still reporting 419
+vulnerabilities six weeks later, listed as current findings of a machine that no longer exists — and because
+their identity keys still counted as "live", the `CveFirstSeen` ages behind them could never be pruned either.
+The stale age rows were the symptom; the phantom results were the cause.
+
+`PruneRemovedServers(configuredServerIds)` runs once per cycle and drops every result whose server is not
+configured any more, the OS entry included (it is protected in `PruneServer` because a container listing says
+nothing about the host — a server that is gone has no host left to protect). Two rules it will not bend:
+
+- The caller passes **every configured server, enabled or not**. Switching a server off is not deleting it; a
+  fortnight of maintenance must not cost its findings or their ages.
+- An **empty** set removes nothing. "No servers configured" and "the server list could not be read" arrive
+  looking identical, and acting on the second would wipe the whole fleet's findings and re-notify all of them
+  on the next scan. Doing nothing is recoverable; that is not.
+
 ## Large reports (2026-08-27)
 
 Trivy's JSON for a large image runs to several megabytes — the Authentik server image measures 3.4 MB. The host

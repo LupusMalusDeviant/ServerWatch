@@ -19,6 +19,7 @@ public sealed class NoopCveFindingsStore : ICveFindingsStore
     public IReadOnlyList<CveScanResult> GetAll() => Array.Empty<CveScanResult>();
     public void Remove(string serverId, string? containerId) { }
     public int PruneServer(string serverId, IReadOnlySet<string> liveKeys) => 0;
+    public int PruneRemovedServers(IReadOnlySet<string> configuredServerIds) => 0;
     public void Clear() { }
     public Task SaveAsync() => Task.CompletedTask;
     public CveSummary SummarizeServer(string serverId) => new() { ServerId = serverId };

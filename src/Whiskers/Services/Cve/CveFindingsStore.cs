@@ -95,6 +95,42 @@ public class CveFindingsStore : ICveFindingsStore
         return removed;
     }
 
+    /// <summary>
+    /// Removes every stored result for a server that is no longer configured — see
+    /// <see cref="ICveFindingsStore.PruneRemovedServers"/> for why these outlive everything else.
+    ///
+    /// <para>Unlike <see cref="PruneServer"/> this DOES take the OS target: that entry is protected there
+    /// because a container listing says nothing about the host, but a server that is gone has no host left to
+    /// protect.</para>
+    /// </summary>
+    public int PruneRemovedServers(IReadOnlySet<string> configuredServerIds)
+    {
+        // An empty set almost certainly means the server list could not be read, not that the fleet is empty.
+        // Acting on it would delete every finding for every server, and the next scan would report the whole
+        // fleet as newly vulnerable. Doing nothing is always recoverable; this is not.
+        if (configuredServerIds.Count == 0)
+        {
+            _logger?.LogWarning(
+                "Not pruning results for removed servers: the configured server list came back empty, which " +
+                "is far more likely to be a read failure than an empty fleet");
+            return 0;
+        }
+
+        var removed = 0;
+        foreach (var kv in _results.ToArray())
+        {
+            if (configuredServerIds.Contains(kv.Value.ServerId)) continue;
+            if (_results.TryRemove(kv.Key, out _)) removed++;
+        }
+
+        if (removed > 0)
+            _logger?.LogInformation(
+                "Removed {Count} stored CVE result(s) belonging to servers that are no longer configured",
+                removed);
+
+        return removed;
+    }
+
     public void Clear() => _results.Clear();
 
     /// <summary>Aggregate counts for one scan result (per target).</summary>

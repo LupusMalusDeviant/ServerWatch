@@ -252,6 +252,14 @@ public class CveMonitorService : BackgroundService, ICveMonitorService
 
             _store.LastScanAt = DateTime.UtcNow;
 
+            // Drop results for servers that are no longer configured at all. PruneServer above only runs for
+            // servers that still exist, so a REMOVED server's findings survived every cycle — reported as
+            // current vulnerabilities of a machine that is gone, and keeping their first-seen ages alive with
+            // them, because a key that is still "live" is never stale. GetServers() rather than
+            // GetEnabledServers(): switching a server off is not removing it, and a fortnight of maintenance
+            // must not cost its findings.
+            _store.PruneRemovedServers(_serverConfig.GetServers().Select(s => s.Id).ToHashSet(StringComparer.OrdinalIgnoreCase));
+
             // Persist first-seen for every current finding so the "open for N days" age survives restarts,
             // then drop first-seen rows for vulnerabilities that are gone AND older than the retention window.
             try
