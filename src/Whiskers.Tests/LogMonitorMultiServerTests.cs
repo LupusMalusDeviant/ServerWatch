@@ -75,7 +75,8 @@ public sealed class LogMonitorMultiServerTests : IDisposable
             new Whiskers.Services.LogMonitor.Hygiene.LogScanExclusions(
                 NullLogger<Whiskers.Services.LogMonitor.Hygiene.LogScanExclusions>.Instance,
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "local" },
-                new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "serverwatch" }));
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "serverwatch" }),
+            new NoOutcomes());
 
     private static FakeServerConfig TwoServers() => new(
         new Whiskers.Models.ServerConfig { Id = "local", Name = "Badwolf (local)", ConnectionType = ConnectionType.Local, IsDefault = true },

@@ -200,7 +200,7 @@ public class SelfStatusPresenterTests
         var servers = new FakeServerConfig(Badwolf);
         var settings = new StaticOptionsMonitor<ServerBudgetSettings>(new ServerBudgetSettings());
         var suspension = new LoopSuspensionService(
-            new FakeNotifications(), servers, NullLogger<LoopSuspensionService>.Instance);
+            new FakeNotifications(), servers, NullLogger<LoopSuspensionService>.Instance, new NoOutcomes());
         suspension.Suspend("badwolf", DateTime.UtcNow.AddMinutes(30), "investigating high load");
 
         var rows = SelfStatusPresenter.ServerRows(

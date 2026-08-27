@@ -122,6 +122,7 @@ public static class McpPermissionLevels
         // and putting it behind the highest bar would mean the load-shedding switch is the one thing an
         // operator-level key cannot reach while the fleet is under load.
         ["get_log_hygiene_report"] = Read,   // Plan-0007 WP-MCP — no write counterpart, by design
+        ["get_action_outcomes"] = Read,       // Plan-0006 WP-MCP — no counterpart that clears the record
         ["get_host_load"] = Read,             // Plan-0004 WP-MCP — no threshold-setting counterpart, by design
         ["get_whiskers_self_status"] = Read,   // Plan-0003 WP-MCP — no write counterpart: an agent that
         // could reset these counters could erase the evidence that something has been broken for a week
@@ -231,6 +232,7 @@ public static class McpPermissionLevels
         ["list_volumes"] = "Volume-Backups",
         ["list_recent_alerts"] = "Benachrichtigungen",
         ["get_log_hygiene_report"] = "Logs",
+        ["get_action_outcomes"] = "Überwachung",
         ["get_host_load"] = "Überwachung",
         ["get_whiskers_self_status"] = "Überwachung",
         ["list_paused_servers"] = "Überwachung",

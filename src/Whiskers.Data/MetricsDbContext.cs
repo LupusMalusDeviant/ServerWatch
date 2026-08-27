@@ -82,6 +82,9 @@ public class MetricsDbContext : DbContext
     /// <summary>Minute-by-minute readings of Whiskers' own loop health (Plan-0003 WP3.2).</summary>
     public DbSet<SelfMetricSampleEntity> SelfMetricSamples => Set<SelfMetricSampleEntity>();
 
+    /// <summary>Automatic actions and whether they actually achieved anything (Plan-0006 WP2).</summary>
+    public DbSet<ActionOutcomeEntity> ActionOutcomes => Set<ActionOutcomeEntity>();
+
     public MetricsDbContext(DbContextOptions<MetricsDbContext> options) : base(options) { }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -154,6 +157,16 @@ public class MetricsDbContext : DbContext
         {
             e.HasIndex(x => x.IdentityKey).IsUnique();
             e.HasIndex(x => x.CveId);
+        });
+
+        modelBuilder.Entity<ActionOutcomeEntity>(e =>
+        {
+            // The due-window sweep asks "what is pending and due?" every minute, so that pair leads. The
+            // correlation index carries the trigger → action → outcome chain.
+            e.HasIndex(x => new { x.Verdict, x.DueAtUtc });
+            e.HasIndex(x => x.CorrelationId);
+            e.HasIndex(x => new { x.ActionKind, x.ExecutedAtUtc });
+            e.Property(x => x.Verdict).HasConversion<string>();
         });
 
         modelBuilder.Entity<SelfMetricSampleEntity>(e =>

@@ -31,7 +31,7 @@ public class LoopSuspensionTrafficTests
     {
         var servers = new FakeServerConfig(Local);
         var suspension = new LoopSuspensionService(
-            new FakeNotifications(), servers, NullLogger<LoopSuspensionService>.Instance);
+            new FakeNotifications(), servers, NullLogger<LoopSuspensionService>.Instance, new NoOutcomes());
         var budget = new ServerBudget(
             new StaticOptionsMonitor<ServerBudgetSettings>(new ServerBudgetSettings()),
             NullLogger<ServerBudget>.Instance);

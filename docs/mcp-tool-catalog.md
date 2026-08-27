@@ -31,6 +31,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 | `disconnect_container_from_network` | write | Disconnect a container from a Docker network. |
 | `execute_command` | admin | Execute a shell command on a server. Use with caution. |
 | `execute_query` | write | Execute a SQL query or database command and return the results. |
+| `get_action_outcomes` | read | Report whether Whiskers' automatic actions actually worked: per action kind, how many were effective, how many changed nothing, and how many could not be measured at all. Read this before repeating an action — a kind with a poor hit rate is one where the cause probably lies elsewhere. A high 'not measurable' count means the checking itself has broken down, which is NOT the same as things being fine. Read-only. |
 | `get_container_details` | read | Get detailed information about a specific Docker container including its configuration, ports, labels, and stats. |
 | `get_container_env` | read | Get environment variables of a running Docker container. Sensitive values (keys, secrets, passwords, tokens) are masked for security. |
 | `get_container_logs` | read | Get logs from a Docker container. |
@@ -137,7 +138,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 
 | Level | Tools |
 |---|---|
-| read | 41 |
+| read | 42 |
 | write | 33 |
 | admin | 3 |
-| **total** | **77** |
+| **total** | **78** |

@@ -24,7 +24,7 @@ public class LoopSuspensionTests
         return (new LoopSuspensionService(
             sent,
             new FakeServerConfig(new ServerConfig { Id = "badwolf", Name = "Badwolf", IsDefault = true }),
-            NullLogger<LoopSuspensionService>.Instance), sent);
+            NullLogger<LoopSuspensionService>.Instance, new NoOutcomes()), sent);
     }
 
     [Fact]

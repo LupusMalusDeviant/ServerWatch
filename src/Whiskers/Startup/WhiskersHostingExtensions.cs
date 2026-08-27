@@ -158,6 +158,11 @@ public static class WhiskersHostingExtensions
         builder.Services.AddSingleton<Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator>();
         builder.Services.AddSingleton<Whiskers.Services.Metrics.HostLoad.ApiLatencyEvaluator>();
         builder.Services.AddSingleton<Whiskers.Services.Metrics.HostLoad.RollingBaseline>();
+        // Plan-0006: records automatic actions and judges them against a criterion declared beforehand.
+        // Observing only — WP3 (rollback) and WP4 (repeat lock) wait for the four weeks of data the plan asks for.
+        builder.Services.AddSingleton<Whiskers.Services.Observability.Outcomes.IActionOutcomeService,
+            Whiskers.Services.Observability.Outcomes.ActionOutcomeService>();
+        builder.Services.AddHostedService<Whiskers.Services.Observability.Outcomes.ActionOutcomeSweeper>();
         builder.Services.AddSingleton<Whiskers.Services.Observability.ILoopSuspensionService, Whiskers.Services.Observability.LoopSuspensionService>();
         // Access-path detection for the log scan (Plan-0007 WP1). The self-host set is resolved once at
         // registration: which servers can hold OUR container is a property of the fleet configuration.

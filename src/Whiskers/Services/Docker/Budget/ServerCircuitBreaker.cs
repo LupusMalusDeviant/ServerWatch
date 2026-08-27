@@ -133,6 +133,12 @@ public sealed class ServerCircuitBreaker : IServerCircuitBreaker
         Announce(serverId, "server_throttled",
             $"{failures} calls in a row failed. Whiskers is pausing its own requests to this server for {cooldown}s " +
             "and will retry with a single probe. This is Whiskers throttling itself — the server is not being checked while it lasts.");
+
+        // Plan-0006: this is an automatic action, so it gets checked. If the daemon is still crawling when the
+        // window closes, the load was never ours and the throttle is a blind spot we imposed for nothing.
+        // Resolved lazily like the notification above — the circuit breaker is constructed before most of the
+        // graph and must not take a hard dependency on it.
+        RecordForOutcome(serverId, failures);
     }
 
     public ServerCircuitSnapshot Snapshot(string serverId)
@@ -151,6 +157,27 @@ public sealed class ServerCircuitBreaker : IServerCircuitBreaker
 
     /// <summary>Reports a transition. Never lets a notification failure break the Docker path — the circuit's
     /// job is to protect the server, and it must keep doing that even if no channel is reachable.</summary>
+    /// <summary>Files this throttle for a later effectiveness check (Plan-0006). Best-effort and never
+    /// allowed to interfere: a bookkeeping failure must not stop the circuit from opening.</summary>
+    private void RecordForOutcome(string serverId, int failures)
+    {
+        try
+        {
+            var outcomes = _serviceProvider
+                .GetService<Whiskers.Services.Observability.Outcomes.IActionOutcomeService>();
+            if (outcomes is null) return;
+
+            var name = _serviceProvider.GetService<IServerConfigService>()?.GetServer(serverId)?.Name ?? serverId;
+            _ = outcomes.RecordAsync(
+                Whiskers.Services.Observability.Outcomes.AutomaticActionKind.SelfThrottle,
+                serverId, serverId, name, $"{failures} calls in a row failed");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not file the throttle of {ServerId} for an outcome check", serverId);
+        }
+    }
+
     private void Announce(string serverId, string eventType, string detail)
     {
         try

@@ -25,6 +25,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     private readonly Docker.Budget.IServerBudget _budget;
     private readonly Observability.SelfMetrics.ISelfMetrics _selfMetrics;
     private readonly Hygiene.ILogScanExclusions _exclusions;
+    private readonly Observability.Outcomes.IActionOutcomeService _outcomes;
     private readonly ConcurrentDictionary<string, DateTime> _cooldowns = new();
     // Per-container timestamp of the last log check, so we fetch only NEW lines and an old ERROR line
     // doesn't re-alert every cycle. Keyed by "{serverId}:{containerId}" (see CompositeKey): container ids
@@ -92,6 +93,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         Docker.Budget.IServerBudget budget,
         Observability.SelfMetrics.ISelfMetrics selfMetrics,
         Hygiene.ILogScanExclusions exclusions,
+        Observability.Outcomes.IActionOutcomeService outcomes,
         TimeSpan? logFetchTimeout = null)
     {
         _scopeFactory = scopeFactory;
@@ -102,6 +104,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         _budget = budget;
         _selfMetrics = selfMetrics;
         _exclusions = exclusions;
+        _outcomes = outcomes;
         _logFetchTimeout = logFetchTimeout ?? DefaultLogFetchTimeout;
     }
 
@@ -393,6 +396,12 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         var pause = SuspensionBackoff[step];
         _suspendedUntil[key] = DateTime.UtcNow + pause;
         _suspendedNames[key] = container.Name;
+
+        // Plan-0006: an automatic action, so it gets checked. If the host is still slow when the window
+        // closes, this container was not the problem and it is now unmonitored for nothing.
+        _ = _outcomes.RecordAsync(
+            Observability.Outcomes.AutomaticActionKind.LogScanLockout,
+            container.ServerId, container.Id, container.Name, $"{timeouts} log fetches in a row timed out");
 
         _logger.LogWarning("Log scan for {Container} on {Server} suspended for {Pause} after {Timeouts} timeouts",
             container.Name, container.ServerName, pause, timeouts);

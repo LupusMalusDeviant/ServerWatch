@@ -20,6 +20,20 @@ All notable changes to Whiskers are documented here. The format follows
   the request. This affected the pre-existing container metrics too, not only the new self-metrics.
 
 ### Added
+- **Automatic actions are now checked against a promise made before they run.** Until now an action counted
+  as successful when the call returned without an error — not when the problem went away, which is the
+  incident's own confusion one level up. Every automatic action kind must declare how it can be checked
+  (metric, direction, threshold, window); one without a criterion fails the test run and cannot be recorded as
+  done. Afterwards the window is judged against series that already exist, and the verdict is one of three:
+  it worked, it changed nothing, or **it could not be measured**. That third verdict is never folded into the
+  first — missing data read as success is precisely the failure this whole package is about. The three
+  existing self-throttles are wired in, and for those "changed nothing" means something sharp: the load was
+  never ours, and monitoring was taken off a server for no benefit. `get_action_outcomes` reports the hit
+  rates. **MCP clients must reconnect to see it.**
+
+  Rollback and repeat-locking are deliberately **not** switched on: the plan asks for four weeks of
+  observation first, and enabling them before anyone knows whether the criteria are any good would be the
+  same habit this package exists to break.
 - **A rolling baseline per host — and a guard for when the baseline learns the fault.** Each server now has
   an exponentially weighted mean and deviation for its own CPU, so a host behaving unlike itself is reported
   even when no fixed threshold is breached. Four sigma rather than the textbook three, because host CPU has a

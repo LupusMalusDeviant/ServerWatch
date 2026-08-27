@@ -90,6 +90,48 @@ Mit SP-1, SP-2 und SP-5 kommen drei weitere automatische Eingriffe hinzu. Ohne R
 
 **Abnahme:** Der Agent liest das Ergebnis seiner eigenen vorherigen Aktion, inklusive `nicht messbar`. Gegenprobe am **laufenden** Server: `tools/list` enthält die Werkzeuge mit der erwarteten Stufe.
 
+## 🟢 Stand der Umsetzung (2026-08-27)
+
+**Umgesetzt: WP1 und WP2 vollständig, WP-MCP, Teile von WP5.** 816/816 Tests grün. Nicht deployt, nicht
+gepusht. **WP3 und WP4 bewusst nicht** — siehe unten.
+
+| Paket | Stand | Nachweis |
+|---|---|---|
+| WP1.1 Kriterienmodell | ✅ | `ActionOutcomeCriterion` — Metrik, Richtung, Schwelle, Fenster, Begründung |
+| WP1.2 Kriterien je Aktionsart | ✅ | alle sechs in `ActionCriteria` |
+| WP1.3 Keine Aktion ohne Kriterium | ✅ | Test läuft über `AutomaticActionKind`; `RecordAsync` wirft |
+| WP2.1 Persistenter Auftrag | ✅ | `ActionOutcomes`-Tabelle, additive Migration in **beiden** Assemblies |
+| WP2.2 Liest vorhandene Reihen | ✅ | Selbstmetriken + `ServerMetrics`/`ContainerMetrics`, misst nichts selbst |
+| WP2.3 Urteil + `CorrelationId` | ✅ | `Worked` / `DidNotWork` / `NotMeasurable`, verkettet |
+| WP2.4 `nicht messbar` nie Erfolg | ✅ | zwei Fälle: fehlende Daten, Neustart im Fenster |
+| WP5.1/5.3 Trefferquote + offene Fenster | ✅ *ohne Ansicht* | `TalliesAsync`, `OverdueCountAsync`, MCP-Bericht |
+| WP-MCP | ✅ | `get_action_outcomes` (read), `all-in-one` 45 → 46 |
+| WP3 Rücknahme, WP4 Wiederholungssperre | ⏸️ **absichtlich offen** | siehe unten |
+| WP5.2 Ansicht | ⬜ offen | UI |
+
+### WP3/WP4 warten — nach der Empfehlung dieses Plans
+
+Der Abschnitt „Rückweg" sagt es selbst: *erst vier Wochen messen, dann die Rücknahme scharf schalten.* Die
+Rücknahme greift in laufende Systeme ein, und ob die Kriterien taugen, weiß heute niemand. Sie ohne diese
+Daten einzuschalten wäre genau die Gewohnheit, die dieses Paket abstellen soll — aus einer ungeprüften
+Annahme über Wirkung heraus zu handeln.
+
+**Angeschlossen sind die drei Selbstdrosselungen, die es schon gibt:** offener Circuit (SP-1), Log-Aussperrung
+(SP-2), Not-Aus (SP-5). Für alle drei bedeutet ein `DidNotWork` etwas Unangenehmes und Konkretes: Die Last kam
+nie von uns, und die Drosselung ist ein blinder Fleck, den wir uns umsonst auferlegt haben. Die Kriterientexte
+sagen das ausdrücklich, und ein Test verlangt es — die naheliegende Lesart von „hat nicht gewirkt" ist sonst
+„mehr davon".
+
+### Ein Fehler, der das ganze Paket wertlos gemacht hätte
+
+Der Neustart-Wächter (WP2.4) las den Prozessstart aus einem `static readonly`-Feld. Eine Klasse ohne
+statischen Konstruktor ist `beforefieldinit` — die Laufzeit darf das Feld erst beim **ersten Zugriff**
+initialisieren, und der erste Zugriff war die Auswertung selbst. Der „Startzeitpunkt" lag damit *nach* jeder
+Aktion, der Wächter griff jedes Mal, und **jedes einzelne Ergebnis wäre `nicht messbar` gewesen**: eine
+Prüfung, die nie prüft, im Kostüm der Sorgfalt. Gefunden nur, weil ein Test verlangt, dass jedes deklarierte
+Kriterium auch tatsächlich zu einem Urteil kommen kann. Der Wert kommt jetzt vom Betriebssystem und hängt
+nicht mehr davon ab, wann man fragt; zwei Tests halten beide Richtungen fest.
+
 ## Reihenfolge und Abhängigkeiten
 
 ```

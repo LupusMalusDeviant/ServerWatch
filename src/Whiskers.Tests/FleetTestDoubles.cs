@@ -214,3 +214,21 @@ internal sealed class NoExclusions : Whiskers.Services.LogMonitor.Hygiene.ILogSc
 
     public IReadOnlyList<Whiskers.Services.LogMonitor.Hygiene.LogScanExclusion> Current() => [];
 }
+
+/// <summary>Records nothing. The outcome bookkeeping is exercised in <c>ActionOutcomeTests</c>; wiring a real
+/// one into every test that happens to trip a self-throttle would only add a database.</summary>
+internal sealed class NoOutcomes : Whiskers.Services.Observability.Outcomes.IActionOutcomeService
+{
+    public Task<string> RecordAsync(
+        Whiskers.Services.Observability.Outcomes.AutomaticActionKind kind, string serverId, string targetId,
+        string targetName, string? reason = null, string? correlationId = null, CancellationToken ct = default)
+        => Task.FromResult(correlationId ?? "test");
+
+    public Task<IReadOnlyList<Whiskers.Models.ActionOutcomeEntity>> EvaluateDueAsync(DateTime nowUtc, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<Whiskers.Models.ActionOutcomeEntity>>([]);
+
+    public Task<IReadOnlyList<Whiskers.Services.Observability.Outcomes.OutcomeTally>> TalliesAsync(DateTime sinceUtc, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<Whiskers.Services.Observability.Outcomes.OutcomeTally>>([]);
+
+    public Task<int> OverdueCountAsync(DateTime nowUtc, CancellationToken ct = default) => Task.FromResult(0);
+}

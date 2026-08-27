@@ -19,7 +19,7 @@ public class SuspensionReminderTests
     {
         var servers = new FakeServerConfig(new ServerConfig { Id = "badwolf", Name = "Badwolf", IsDefault = true });
         var sent = new FakeNotifications();
-        var suspension = new LoopSuspensionService(new FakeNotifications(), servers, NullLogger<LoopSuspensionService>.Instance);
+        var suspension = new LoopSuspensionService(new FakeNotifications(), servers, NullLogger<LoopSuspensionService>.Instance, new NoOutcomes());
         var reminder = new SuspensionReminder(
             suspension, sent, servers, NullLogger<SuspensionReminder>.Instance, After);
         return (reminder, suspension, sent);

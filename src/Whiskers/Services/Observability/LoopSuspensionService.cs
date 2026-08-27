@@ -18,15 +18,18 @@ public sealed class LoopSuspensionService : ILoopSuspensionService
     private readonly INotificationService _notifications;
     private readonly IServerConfigService _servers;
     private readonly ILogger<LoopSuspensionService> _logger;
+    private readonly Outcomes.IActionOutcomeService _outcomes;
 
     public LoopSuspensionService(
         INotificationService notifications,
         IServerConfigService servers,
-        ILogger<LoopSuspensionService> logger)
+        ILogger<LoopSuspensionService> logger,
+        Outcomes.IActionOutcomeService outcomes)
     {
         _notifications = notifications;
         _servers = servers;
         _logger = logger;
+        _outcomes = outcomes;
     }
 
     public bool IsSuspended(string serverId)
@@ -62,6 +65,12 @@ public sealed class LoopSuspensionService : ILoopSuspensionService
 
         var name = ServerName(serverId);
         _logger.LogWarning("Background loops for {Server} paused until {Until} ({Reason})", name, deadline, reason);
+
+        // Plan-0006: an automatic action, so it gets checked. If the host's CPU has not come down when the
+        // window closes, Whiskers was not the cause — and the pause has taken monitoring away from a server
+        // that has a real problem.
+        try { _ = _outcomes.RecordAsync(Outcomes.AutomaticActionKind.EmergencyStop, serverId, serverId, name, reason); }
+        catch (Exception ex) { _logger.LogDebug(ex, "Could not file the pause of {ServerId} for an outcome check", serverId); }
 
         Announce("loops_paused", serverId, name,
             $"Background checks for {name} are paused" +

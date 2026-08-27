@@ -51,7 +51,7 @@ public class SelfStatusToolTests
             new ServerCircuitBreaker(settings, new ServiceCollection().BuildServiceProvider(),
                 NullLogger<ServerCircuitBreaker>.Instance),
             suspension ?? new LoopSuspensionService(
-                new FakeNotifications(), servers, NullLogger<LoopSuspensionService>.Instance),
+                new FakeNotifications(), servers, NullLogger<LoopSuspensionService>.Instance, new NoOutcomes()),
             servers);
     }
 
@@ -125,7 +125,7 @@ public class SelfStatusToolTests
         metrics.RecordCycle("logmonitor", "badwolf", TimeSpan.FromMilliseconds(120), success: true, TimeSpan.FromMinutes(1));
 
         var suspension = new LoopSuspensionService(
-            new FakeNotifications(), new FakeServerConfig(Badwolf), NullLogger<LoopSuspensionService>.Instance);
+            new FakeNotifications(), new FakeServerConfig(Badwolf), NullLogger<LoopSuspensionService>.Instance, new NoOutcomes());
         suspension.Suspend("badwolf", DateTime.UtcNow.AddMinutes(30), "investigating");
 
         Assert.Contains("background checks PAUSED", Report(metrics, suspension));
