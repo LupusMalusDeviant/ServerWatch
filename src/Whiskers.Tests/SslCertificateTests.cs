@@ -35,7 +35,8 @@ public class SslCertificateTests
 
     private sealed class StubExecutor(string output) : IHostCommandExecutor
     {
-        public Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null, CancellationToken ct = default)
+        public Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null,
+            CancellationToken ct = default, int? maxOutputChars = null)
             => Task.FromResult(new CommandResult { ExitCode = 0, Output = output });
     }
 

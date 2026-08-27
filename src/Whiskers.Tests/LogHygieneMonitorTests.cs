@@ -20,7 +20,8 @@ public class LogHygieneMonitorTests
         public string Size { get; set; } = "157286400";     // 150 MB
         public string Free { get; set; } = "209715200";     // 200 MB
 
-        public Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null, CancellationToken ct = default)
+        public Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null,
+            CancellationToken ct = default, int? maxOutputChars = null)
             => Task.FromResult(new CommandResult
             {
                 ExitCode = 0,

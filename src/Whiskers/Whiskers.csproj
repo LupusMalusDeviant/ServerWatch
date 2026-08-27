@@ -37,4 +37,11 @@
     <ProjectReference Include="..\Whiskers.Migrations.Postgres\Whiskers.Migrations.Postgres.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The output cap lives inside HostCommandExecutor and is the mechanism the Trivy truncation bug turned
+         on. A test that mocks around it would pass while the cap itself was broken, so the reader is opened
+         to the test project rather than tested through a stand-in. -->
+    <InternalsVisibleTo Include="Whiskers.Tests" />
+  </ItemGroup>
+
 </Project>

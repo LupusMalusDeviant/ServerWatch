@@ -12,10 +12,23 @@ Findings are **de-duplicated per CVE-ID** for display (one CVE > all real affect
 |---|---|
 | `ICveMonitorService.cs` / `CveMonitorService.cs` | Background CVE monitor; also exposes a manual scan cycle the UI can trigger. Stamps host-OS context onto OS findings and records first-seen timestamps after each cycle. |
 | `IOsCveScanner.cs` / `OsCveScanner.cs` | Scans a server's host OS packages for known CVEs. |
-| `ITrivyScanner.cs` / `TrivyScanner.cs` | Scans a container image for known CVEs using [Trivy](https://github.com/aquasecurity/trivy); captures the image OS and the CVE published date. |
+| `ITrivyScanner.cs` / `TrivyScanner.cs` | Scans a container image for known CVEs using [Trivy](https://github.com/aquasecurity/trivy); captures the image OS and the CVE published date. Requests a 16 MB output cap and refuses a truncated report outright — see **Large reports** below. |
 | `ICveFindingsStore.cs` / `CveFindingsStore.cs` | In-memory store of the latest CVE scan results per server/container, with summary helpers and `BuildGroups`, which **de-duplicates** every finding into one `CveGroup` per CVE-ID listing all real affected (server, container/OS, package) instances behind it. |
 | `ICveAgeStore.cs` / `CveAgeStore.cs` | Persists (SQLite, `CveFirstSeen` table) when each vulnerability instance was first detected, so the "open for N days" age survives restarts. Recorded after each scan cycle; read when grouping. |
 | `NoopCveServices.cs` | Core no-op defaults (`NoopCveFindingsStore` / `NoopCveMonitorService` / `NoopCveAgeStore`) for when the **Cve module** is off — the findings store + monitor are read by the Core Dashboard/ContainerDetail/Settings pages, which then show no CVE data. Real services win by last-registration when on (RoadToSAP Phase 1). |
+
+## Large reports (2026-08-27)
+
+Trivy's JSON for a large image runs to several megabytes — the Authentik server image measures 3.4 MB. The host
+executor capped command output at 1 MB, so the document arrived cut in half with a truncation marker appended,
+and the scan failed every cycle with `'0xE2' is an invalid start of a value` — the marker's first byte. The
+error named the parser, the cause was the limit, and that image silently kept its stale findings for months.
+
+The scanner now asks for a 16 MB cap (about five times the largest report observed) and checks
+`CommandResult.OutputTruncated` **before** parsing: a report that was cut off is reported as cut off and
+discarded, never parsed into a partial verdict — a half-read report would look exactly like a clean bill of
+health for everything the cut removed. Output that was never truncated and still cannot be read keeps failing
+loudly as a parse error, because that is a bug to find rather than a limit to raise.
 
 ## Wiring
 

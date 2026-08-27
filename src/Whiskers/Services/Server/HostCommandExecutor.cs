@@ -16,6 +16,9 @@ public class HostCommandExecutor : IHostCommandExecutor
 
     // Cap how much we buffer per stream so a runaway command (e.g. `cat` on a huge file) can't OOM
     // the process. Output beyond this is drained but discarded, with a marker appended.
+    // Callers that read a DOCUMENT rather than a log (a scanner report, an inventory) can raise this per
+    // call; see IHostCommandExecutor.ExecuteAsync. Silently cutting a document in half is worse than
+    // refusing it, so a raised cap that is still hit is reported via CommandResult.OutputTruncated.
     private const int MaxOutputChars = 1024 * 1024; // ~1 MB per stream
     private const string TruncationMarker = "… (Ausgabe gekürzt)";
 
@@ -31,7 +34,8 @@ public class HostCommandExecutor : IHostCommandExecutor
         _logger = logger;
     }
 
-    public async Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null, CancellationToken ct = default)
+    public async Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null,
+        CancellationToken ct = default, int? maxOutputChars = null)
     {
         if (string.IsNullOrWhiteSpace(serverId))
             throw new ArgumentException("serverId cannot be null or empty", nameof(serverId));
@@ -51,15 +55,18 @@ public class HostCommandExecutor : IHostCommandExecutor
         //   else  → SSH, if an SSH host is configured (legacy / bootstrap).
         return server.ConnectionType switch
         {
-            ConnectionType.Local => await ExecuteLocalAsync(command, effectiveTimeout, ct),
+            ConnectionType.Local => await ExecuteLocalAsync(command, effectiveTimeout, ct, maxOutputChars),
+            // The mTLS path reads the output through the Docker API, not through ReadCappedAsync, so the cap
+            // does not apply there — it is neither enforced nor needed, and nothing is truncated.
             ConnectionType.TCP => await ExecuteViaDockerAsync(server.Id, command, effectiveTimeout),
             _ when !string.IsNullOrWhiteSpace(server.SshHost)
-                => await ExecuteSshAsync(server, command, effectiveTimeout, ct),
+                => await ExecuteSshAsync(server, command, effectiveTimeout, ct, maxOutputChars),
             _ => new CommandResult { ExitCode = -1, Error = $"No shell transport for server (ConnectionType={server.ConnectionType}, no SSH host configured)" }
         };
     }
 
-    private async Task<CommandResult> ExecuteLocalAsync(string command, TimeSpan timeout, CancellationToken ct)
+    private async Task<CommandResult> ExecuteLocalAsync(string command, TimeSpan timeout, CancellationToken ct,
+        int? maxOutputChars = null)
     {
         // Break out of the container's namespaces into the host, then hand the command verbatim to a
         // shell as a single argument. Passing it as one argv element (not a concatenated string) means
@@ -69,7 +76,7 @@ public class HostCommandExecutor : IHostCommandExecutor
 
         _logger.LogDebug("Executing local command via nsenter: {Command}", SecretRedactor.Redact(command));
 
-        return await RunProcessAsync("nsenter", args, timeout, ct);
+        return await RunProcessAsync("nsenter", args, timeout, ct, maxOutputChars: maxOutputChars);
     }
 
     // SSH-free shell for TCP+mTLS servers: drive a one-shot privileged nsenter container over the
@@ -90,7 +97,8 @@ public class HostCommandExecutor : IHostCommandExecutor
         }
     }
 
-    private async Task<CommandResult> ExecuteSshAsync(Models.ServerConfig server, string command, TimeSpan timeout, CancellationToken ct)
+    private async Task<CommandResult> ExecuteSshAsync(Models.ServerConfig server, string command, TimeSpan timeout,
+        CancellationToken ct, int? maxOutputChars = null)
     {
         if (string.IsNullOrWhiteSpace(server.SshHost))
             return new CommandResult { ExitCode = -1, Error = "SSH host is not configured" };
@@ -141,13 +149,13 @@ public class HostCommandExecutor : IHostCommandExecutor
         if (usePassword)
             // sshpass -e reads the password from SSHPASS — never on the command line / process list.
             return await RunProcessAsync("sshpass", new[] { "-e", "ssh" }.Concat(args), timeout, ct,
-                env: ("SSHPASS", server.SshPassword!));
+                env: ("SSHPASS", server.SshPassword!), maxOutputChars: maxOutputChars);
 
-        return await RunProcessAsync("ssh", args, timeout, ct);
+        return await RunProcessAsync("ssh", args, timeout, ct, maxOutputChars: maxOutputChars);
     }
 
     private async Task<CommandResult> RunProcessAsync(string fileName, IEnumerable<string> arguments, TimeSpan timeout, CancellationToken ct,
-        (string Key, string Value)? env = null)
+        (string Key, string Value)? env = null, int? maxOutputChars = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -171,8 +179,11 @@ public class HostCommandExecutor : IHostCommandExecutor
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(timeout);
 
-            var stdoutTask = ReadCappedAsync(process.StandardOutput, cts.Token);
-            var stderrTask = ReadCappedAsync(process.StandardError, cts.Token);
+            var cap = maxOutputChars is > 0 ? maxOutputChars.Value : MaxOutputChars;
+            var stdoutTask = ReadCappedAsync(process.StandardOutput, cap, cts.Token);
+            // stderr keeps the default cap regardless: a raised cap is granted for the document a caller
+            // wants to read, not for whatever the command decides to complain about.
+            var stderrTask = ReadCappedAsync(process.StandardError, MaxOutputChars, cts.Token);
 
             try
             {
@@ -180,11 +191,17 @@ public class HostCommandExecutor : IHostCommandExecutor
                 var stdout = await stdoutTask;
                 var stderr = await stderrTask;
 
+                if (stdout.Truncated)
+                    _logger.LogWarning(
+                        "Output of {FileName} exceeded {Cap} characters and was cut. A caller parsing this " +
+                        "sees a malformed document, not a short one.", fileName, cap);
+
                 return new CommandResult
                 {
                     ExitCode = process.ExitCode,
-                    Output = stdout,
-                    Error = stderr
+                    Output = stdout.Text,
+                    Error = stderr.Text,
+                    OutputTruncated = stdout.Truncated
                 };
             }
             catch (OperationCanceledException)
@@ -214,10 +231,17 @@ public class HostCommandExecutor : IHostCommandExecutor
         }
     }
 
-    // Reads a stream but buffers at most MaxOutputChars; any further output is read and discarded
-    // (so the child process never blocks on a full pipe) and a marker is appended. Applies to every
-    // caller of RunProcessAsync (local nsenter + SSH), so firewall/nginx/systemd/etc. are all capped.
-    private static async Task<string> ReadCappedAsync(StreamReader reader, CancellationToken ct)
+    // Reads a stream but buffers at most `cap` characters; any further output is read and discarded (so the
+    // child process never blocks on a full pipe) and a marker is appended. Applies to every caller of
+    // RunProcessAsync (local nsenter + SSH), so firewall/nginx/systemd/etc. are all capped.
+    //
+    // Returns WHETHER it cut anything, and that return value is the point: the marker alone is a human
+    // courtesy that a parser reads as garbage. The Trivy scanner reported the marker's first byte as a JSON
+    // syntax error for months, which pointed at the parser instead of at the limit.
+    // Takes a TextReader rather than the StreamReader the process hands it: nothing here needs a stream, and
+    // the wider type lets the cap be exercised directly instead of through a process that cannot run in a test.
+    internal static async Task<(string Text, bool Truncated)> ReadCappedAsync(TextReader reader, int cap,
+        CancellationToken ct)
     {
         var buffer = new char[8192];
         var sb = new System.Text.StringBuilder();
@@ -228,7 +252,7 @@ public class HostCommandExecutor : IHostCommandExecutor
         {
             if (!truncated)
             {
-                var remaining = MaxOutputChars - sb.Length;
+                var remaining = cap - sb.Length;
                 if (read <= remaining)
                 {
                     sb.Append(buffer, 0, read);
@@ -246,6 +270,6 @@ public class HostCommandExecutor : IHostCommandExecutor
         if (truncated)
             sb.Append('\n').Append(TruncationMarker);
 
-        return sb.ToString();
+        return (sb.ToString(), truncated);
     }
 }

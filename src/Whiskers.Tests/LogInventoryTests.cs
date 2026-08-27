@@ -20,7 +20,8 @@ public class LogInventoryTests
         public List<string> Commands { get; } = new();
         public CommandResult Fallback { get; set; } = new() { ExitCode = 1, Error = "no host access" };
 
-        public Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null, CancellationToken ct = default)
+        public Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null,
+            CancellationToken ct = default, int? maxOutputChars = null)
         {
             Commands.Add(command);
             foreach (var (needle, response) in Responses)

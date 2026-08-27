@@ -11,7 +11,8 @@ public class OsCveScannerLocaleTests
     private sealed class CapturingExecutor : IHostCommandExecutor
     {
         public readonly List<string> Commands = new();
-        public Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null, CancellationToken ct = default)
+        public Task<CommandResult> ExecuteAsync(string serverId, string command, TimeSpan? timeout = null,
+            CancellationToken ct = default, int? maxOutputChars = null)
         {
             Commands.Add(command);
             return Task.FromResult(new CommandResult { ExitCode = 0, Output = "", Error = "" });

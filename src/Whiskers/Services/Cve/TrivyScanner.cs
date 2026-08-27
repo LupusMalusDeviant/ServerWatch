@@ -21,6 +21,19 @@ public class TrivyScanner : ITrivyScanner
 
     private const string CacheVolume = "serverwatch-trivy-cache";
 
+    /// <summary>
+    /// Output cap for a Trivy run, raised well above the executor's default 1 MB.
+    ///
+    /// <para>Trivy's JSON for a large image runs to several megabytes — the Authentik server image measures
+    /// 3.4 MB — and the default cap cut it mid-document. The scan then failed with
+    /// "'0xE2' is an invalid start of a value", which is the first byte of the executor's truncation marker
+    /// and reads as a parser bug. The image quietly stopped being scanned for months.</para>
+    ///
+    /// <para>16 MB is roughly five times the largest output observed, and still a bound: an image that
+    /// exceeds even this is reported as truncated rather than parsed into a partial verdict.</para>
+    /// </summary>
+    private const int MaxTrivyOutputChars = 16 * 1024 * 1024;
+
     public TrivyScanner(
         IHostCommandExecutor executor,
         IOptionsMonitor<CveMonitorSettings> settings,
@@ -69,13 +82,28 @@ public class TrivyScanner : ITrivyScanner
 
         // First scan on a server downloads the Trivy DB (~600 MB compressed) so allow
         // up to 10 minutes. Subsequent scans usually finish in seconds.
-        var exec = await _executor.ExecuteAsync(serverId, cmd, TimeSpan.FromMinutes(10), ct);
+        var exec = await _executor.ExecuteAsync(serverId, cmd, TimeSpan.FromMinutes(10), ct,
+            maxOutputChars: MaxTrivyOutputChars);
         if (!exec.Success || string.IsNullOrWhiteSpace(exec.Output))
         {
             result.Error = $"trivy exit {exec.ExitCode}: " +
                 Truncate(string.IsNullOrEmpty(exec.Error) ? exec.Output : exec.Error, 400);
             _logger.LogWarning("Trivy scan failed for {Image} on {Server}: {Error}",
                 image, serverId, result.Error);
+            return result;
+        }
+
+        // A cut-off document is a limit that needs raising, not a malformed one that needs a better parser —
+        // and the two are indistinguishable once the JSON reader has spoken. Saying so before parsing is the
+        // whole difference between a fixable report and six months of a silently unscanned image.
+        if (exec.OutputTruncated)
+        {
+            result.Error = $"trivy output exceeded {MaxTrivyOutputChars / (1024 * 1024)} MB and was cut off — " +
+                "the scan is incomplete and was discarded, not parsed";
+            _logger.LogWarning(
+                "Trivy output for {Image} on {Server} exceeded the {Cap} MB cap and was cut off. No findings " +
+                "were taken from this run; raise MaxTrivyOutputChars.",
+                image, serverId, MaxTrivyOutputChars / (1024 * 1024));
             return result;
         }
 
