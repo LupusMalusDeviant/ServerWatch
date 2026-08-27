@@ -174,6 +174,62 @@ EH-6  unabhängig, klein, sofort
 
 ---
 
+## 4c. Strang RES — Ressourcen und Lastverteilung (neu, 2026-08-27)
+
+### Die Absage zuerst
+
+Ein Verschiebe-Planer, der Container zwischen Hosts bewegt, ist ein Nachbau von Kubernetes/Nomad/Swarm —
+Personenjahre, und ausdrücklich nicht, was Whiskers ist (GAP-1 heißt *Parität* mit K8s, nicht Ersatz). Dazu
+kommt ein handfestes Hindernis: **in dieser Flotte gibt es nichts Zustandsloses zum Verschieben.** Jeder Dienst
+hat Volumes. Dynamisches Auslagern scheitert nicht an der Planung, sondern an den Daten.
+
+Die Pakete unten sind die Schnitte, die fast den ganzen Nutzen liefern, ohne diesen Weg zu gehen.
+
+### Der Befund, der die Reihenfolge bestimmt
+
+Plattenstand am 2026-08-27, aus `ServerMetrics`:
+
+| Server | belegt | frei |
+|---|---|---|
+| burgcloud | 31,6 / 40 GB | **8,4 GB** |
+| zirkuswagen | 28,2 / 40 GB | 11,8 GB |
+| infomaniak | 13 / 19,7 GB | 7,5 GB (nach der Log-Bereinigung; vorher 4,7) |
+| rabenhof | 18,3 / 40 GB | 21,6 GB |
+| hetzner-apps | 15,7 / 40 GB | 24,2 GB |
+| Badwolf (local) | 26,6 / 87 GB | 60,3 GB |
+
+**Diese Flotte ist plattengebunden, nicht rechengebunden.** Der Engpass ist burgcloud mit 8,4 GB, nicht eine
+CPU. Deshalb steht Platzrückgewinnung vor jeder Form von Verschiebung: Am selben Tag fanden sich 3 GB
+unbegrenzte Logs auf einer einzigen Maschine, ohne dass jemand gesucht hätte.
+
+| # | Paket | Was es löst | Aufwand |
+|---|---|---|---|
+| RES-1 | **Was kann hier weg, und wie viel bringt es** | Verwaiste Images, gestoppte Container, tote Volumes, Build-Caches, Logs ohne Limit — je Server, mit rückgewinnbarer Menge und einem Befehl, der es tut. Whiskers kennt das Image-Inventar bereits vom CVE-Scan; es fehlt nur die Rückseite. **Lastverteilung durch Nicht-Verschieben** — und das Einzige hier, das in dieser Flotte heute etwas ändert. | S |
+| RES-2 | **Die eigene Arbeit lastabhängig planen** | Whiskers *ist* Last: es startet Trivy-Container auf den Zielhosts, liest Logs, sammelt Metriken. Der Vorfall vom 2026-08-26 war Whiskers, das einen Zweikern-Host niederdrückte. Diese Arbeit ist im Gegensatz zu Diensten frei planbar: keine schweren Läufe auf einem Server, der gerade bei 90 % steht; nie zwei parallel auf derselben Kiste; Schweres in die Nacht. Setzt SP-1 dort fort, wo es aufhört — vom „nicht zu viel gleichzeitig" zum „und nicht jetzt, nicht hier". | S–M |
+| RES-3 | **Verschiebe-Empfehlung statt Verschiebung** | Aus 515.012 Container-Messpunkten über sechs Server: „burgcloud ist zu 79 % voll, größter Posten X; zirkuswagen läuft bei 12 % CPU mit 11,8 GB frei — X dorthin entlastet beide." Mit Belegen, der Mensch entscheidet. 90 % des Nutzens bei 5 % des Risikos, und es passt zum Charakter: Whiskers sagt Dinge, automatische Aktionen werden auf Wirkung geprüft (SP-6). | M |
+| RES-4 | **Wegwerf-Rechner für wegwerfbare Arbeit** | Für einen Scanlauf über die ganze Flotte eine temporäre Cloud-Maschine hochziehen, dort scannen, wieder löschen. Kosten: Cent. Alternative: 40 Minuten spürbar langsamer burgcloud. Möglich, weil Whiskers als einziges Werkzeug **beides** hat — den Flottenblick und den Cloud-Zugang (`ICloudProvider`, Hetzner/Hostinger). Strikt begrenzt auf **zustandslose, wegwerfbare** Arbeit; niemals Dienste. Der Punkt, an dem Whiskers etwas kann, das die Konkurrenz strukturell nicht kann. | M–L |
+| RES-5 | **Abhängigkeitskarte der Flotte** | Whiskers kennt Compose-Projekte, Netze und Ports. Was es nicht kennt, ist Stammeswissen: Whiskers braucht Authentik (OIDC) und VictoriaMetrics, mcpmcp braucht die CA. Als Daten hinterlegt wird daraus die Antwort auf „wenn dieser Server stirbt, was bricht?". | M |
+| RES-6 | **Drain-Modus vor Wartung** | Vor einem Neustart sagen, was mitgeht, und Abhängige in einen bekannten Zustand bringen — statt es hinterher zu merken. Konkreter Anlass aus dem Betrieb: ein Reboot dieser Docker-Hosts schickt reverse-proxied Sites in 502, weil DNS-Einträge veralten; die Abhilfe ist heute ungeschriebenes Wissen. | S–M |
+
+### Abhängigkeiten RES
+
+```
+SP-1 (Lastbudget) + SP-3 (Selbstbeobachtung) ──> RES-2 (ohne Lastzahlen keine lastabhängige Planung)
+RES-5 (Abhängigkeitskarte) ──┬──> RES-6 (Drain weiß erst dadurch, wen es trifft)
+                             └──> GAP-7 (Wirkungsradius vorher)
+RES-1  unabhängig, sofort, größter Sofortnutzen
+RES-4  braucht ICloudProvider (vorhanden) — eigenständiges Experiment
+```
+
+### Bewusst NICHT gebaut
+
+| Idee | Warum nicht |
+|---|---|
+| **Verschiebe-Planer / Container-Migration zwischen Hosts** | Nachbau von Kubernetes/Nomad/Swarm, Personenjahre, und der ausdrückliche Nicht-Zweck von Whiskers. Zusätzlich hat in dieser Flotte jeder Dienst Volumes — das Hindernis sind die Daten, nicht die Planung. RES-3 liefert die Entscheidungsgrundlage, den Zug macht ein Mensch. |
+| **Automatisches Auslagern von Diensten in die Cloud** | Dasselbe Zustandsproblem. RES-4 begrenzt sich deshalb strikt auf wegwerfbare Arbeit. |
+
+---
+
 ## 5a. Stand 2026-08-27 und was noch einen Server braucht
 
 **Wellen 0 bis 3 sind umgesetzt und seit 2026-08-27 auf Badwolf deployt** (864 Tests, Stand `bb1216d`). Erledigt: SP-1 (Abbruch, Lastbudget,
