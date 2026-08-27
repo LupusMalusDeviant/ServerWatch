@@ -149,6 +149,12 @@ public sealed class HostLoadEvaluator
     /// close stops being read long before anyone works out why.</summary>
     public IReadOnlyList<OpenFinding> OpenFindings() => _tracker.OpenFindings();
 
+    /// <summary>The CPU threshold this evaluator is using. Exposed so the rolling baseline can compare its
+    /// learned mean against the SAME number rather than keeping its own copy — two definitions of "too high"
+    /// would eventually disagree, and the drift guard would then be measuring against a limit nobody
+    /// alerts on.</summary>
+    public static double CpuThresholdOf(HostLoadEvaluator evaluator) => evaluator._thresholds.CpuPercent;
+
     private static void Add(List<HostLoadFinding> findings, HostLoadFinding? finding)
     {
         if (finding is not null) findings.Add(finding);

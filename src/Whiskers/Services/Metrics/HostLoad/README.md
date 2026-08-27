@@ -6,6 +6,34 @@ The rules that judge a **host**, not a container.
 |---|---|
 | `HostSample.cs` | One reading, plus the CPU-scale reconciliation that makes the two figures comparable. |
 | `HostLoadEvaluator.cs` | Sustained host CPU/memory, and host load no container accounts for. |
+| `BreachTracker.cs` | One open finding per server and metric: raised once, escalated when worse, closed on real recovery. Shared by all three rules. |
+| `ApiLatencyEvaluator.cs` | The daemon's own response time — an overloaded Docker, whoever is overloading it. |
+| `RollingBaseline.cs` | Deviation from a host's own normal, **and** the guard for when that normal has drifted past the fixed limit. |
+
+## Four rules, and why none of them replaces another
+
+- **Sustained threshold** — the machine is busy. Simple, and it is what the incident needed.
+- **Unexplained load** — the machine is busy and no container accounts for it. Names the class of cause.
+- **Response time** — the daemon is slow. Catches the *transition*; sees overload the host's own CPU cannot,
+  including a link that has gone bad rather than a host.
+- **Deviation from normal** — this host is not behaving like itself, whatever the absolute numbers say.
+
+They overlap on purpose. The 2026-08-26 incident would have tripped three of them, and the one thing each
+does that the others cannot is written next to it in the code.
+
+## The trap that keeps coming back
+
+Three times now the same shape has appeared in this codebase: a measure that adjusts to the thing it is
+supposed to detect.
+
+1. The log-scan watermark that grew with every failed fetch, making the next attempt more expensive.
+2. An API-latency baseline that absorbed the slowdown it was written to find (caught during development —
+   with the recent readings in the baseline, a 100 ms → 5 s step produced a ratio under two).
+3. The rolling baseline itself, which after an hour of plateau decides 98% is normal and goes quiet.
+
+The third one cannot be designed away — a rolling baseline that does not roll is not a baseline. So it is
+handled instead: `RollingBaseline` watches **its own mean**, and when the learned normal crosses the fixed
+threshold, that is the finding. Four of that class's nine tests are about this one behaviour.
 
 ## The gap this closes
 

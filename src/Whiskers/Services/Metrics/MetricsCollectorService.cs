@@ -24,6 +24,7 @@ public class MetricsCollectorService : BackgroundService
     // field would have made the "is the closing path working?" number the one number nobody can see.
     private readonly Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator _hostLoad;
     private readonly Whiskers.Services.Metrics.HostLoad.ApiLatencyEvaluator _apiLatency;
+    private readonly Whiskers.Services.Metrics.HostLoad.RollingBaseline _baseline;
     private DateTime _lastPrune;                 // OPT-2: prune at most hourly, not every 30s cycle
     private const int MaxStatsConcurrency = 8;   // OPT-11.2: bound the per-container stats fan-out
 
@@ -32,6 +33,7 @@ public class MetricsCollectorService : BackgroundService
         IOptionsMonitor<MetricAlertSettings> alertSettings,
         Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator hostLoad,
         Whiskers.Services.Metrics.HostLoad.ApiLatencyEvaluator apiLatency,
+        Whiskers.Services.Metrics.HostLoad.RollingBaseline baseline,
         IOptionsMonitor<MetricsSettings> metricsSettings,
         ILogger<MetricsCollectorService> logger,
         Whiskers.Services.Observability.SelfMetrics.ISelfMetrics selfMetrics)
@@ -40,6 +42,7 @@ public class MetricsCollectorService : BackgroundService
         _alertSettings = alertSettings;
         _hostLoad = hostLoad;
         _apiLatency = apiLatency;
+        _baseline = baseline;
         _metricsSettings = metricsSettings;
         _logger = logger;
         _selfMetrics = selfMetrics;
@@ -222,6 +225,13 @@ public class MetricsCollectorService : BackgroundService
                             var slow = _apiLatency.Evaluate(now, serverId, info.ServerName, latencies);
                             if (slow is not null) findings.Add(slow);
                         }
+
+                        // Plan-0004 WP3: deviation from this host's own normal, plus the guard that says so
+                        // when the "normal" has itself drifted past the fixed threshold. The absolute limit is
+                        // handed in rather than duplicated — one definition of "too high", used by both rules.
+                        findings.AddRange(_baseline.Observe(
+                            now, serverId, info.ServerName, "host_cpu", info.CpuUsagePercent,
+                            Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator.CpuThresholdOf(_hostLoad)));
 
                         foreach (var finding in findings)
                         {

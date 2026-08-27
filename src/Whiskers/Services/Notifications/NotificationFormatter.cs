@@ -27,6 +27,10 @@ public static class NotificationFormatter
         "server_recovered" => ("Server reachable again", "Info"),
         // Whiskers throttling ITSELF. Never silent: a self-imposed pause that nobody is told about
         // turns "quiet" into "blind", and hides the next incident behind the fix for the last one.
+        "host_cpu_anomaly" => ("Server CPU is far from this host's normal", "Warning"),
+        "host_cpu_anomaly_recovered" => ("Server CPU is back within its usual range", "Info"),
+        "host_cpu_baseline_drifted" => ("The learned normal has drifted past the threshold", "Warning"),
+        "host_cpu_baseline_drifted_recovered" => ("The learned normal is back below the threshold", "Info"),
         "host_api_slow" => ("Docker is answering much slower than usual", "Warning"),
         "host_api_slow_recovered" => ("Docker is answering at its usual speed again", "Info"),
         "host_cpu_high" => ("Server CPU high for a sustained period", "Warning"),

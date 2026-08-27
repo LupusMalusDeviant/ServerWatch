@@ -59,10 +59,16 @@ public static class BurgCloudIncidentSeries
 
     // --- the series ---------------------------------------------------------------------------------------
 
-    /// <summary>The window the plan asks for: 19–27 August, so the series contains a full day of ordinary
-    /// operation before the step and a day after the remediation.</summary>
+    /// <summary>18–27 August: ordinary operation before the step, and a day after the remediation.
+    ///
+    /// <para>The plan names 19–27 August for the <em>real</em> export. This synthetic bench starts a day
+    /// earlier for a concrete reason: the rolling baseline (WP3) has a 48-hour learning period, and the step
+    /// is at 20 August 14:02. Starting on the 19th leaves only 38 hours of runway, so the baseline would
+    /// still have been learning when the incident began and could never have been shown to catch it. That is
+    /// a property of the bench, not of the rule — but a bench that cannot exercise the rule proves
+    /// nothing.</para></summary>
     public static IReadOnlyList<HostSample> Build()
-        => Build(new DateTime(2026, 8, 19, 0, 0, 0, DateTimeKind.Utc),
+        => Build(new DateTime(2026, 8, 18, 0, 0, 0, DateTimeKind.Utc),
                  new DateTime(2026, 8, 27, 0, 0, 0, DateTimeKind.Utc));
 
     public static IReadOnlyList<HostSample> Build(DateTime fromUtc, DateTime toUtc)

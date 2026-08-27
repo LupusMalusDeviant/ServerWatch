@@ -157,6 +157,7 @@ public static class WhiskersHostingExtensions
         // what was already said — is the whole point; a per-cycle instance would re-raise every alert.
         builder.Services.AddSingleton<Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator>();
         builder.Services.AddSingleton<Whiskers.Services.Metrics.HostLoad.ApiLatencyEvaluator>();
+        builder.Services.AddSingleton<Whiskers.Services.Metrics.HostLoad.RollingBaseline>();
         builder.Services.AddSingleton<Whiskers.Services.Observability.ILoopSuspensionService, Whiskers.Services.Observability.LoopSuspensionService>();
         // Access-path detection for the log scan (Plan-0007 WP1). The self-host set is resolved once at
         // registration: which servers can hold OUR container is a property of the fleet configuration.

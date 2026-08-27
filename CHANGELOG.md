@@ -20,6 +20,19 @@ All notable changes to Whiskers are documented here. The format follows
   the request. This affected the pre-existing container metrics too, not only the new self-metrics.
 
 ### Added
+- **A rolling baseline per host — and a guard for when the baseline learns the fault.** Each server now has
+  an exponentially weighted mean and deviation for its own CPU, so a host behaving unlike itself is reported
+  even when no fixed threshold is breached. Four sigma rather than the textbook three, because host CPU has a
+  floor, a ceiling and a long tail of legitimate busy periods, and three sigma on that shape alerts most days.
+
+  The important half is the guard. A baseline that keeps learning through an incident eventually decides that
+  98% is normal and stops complaining — going quiet precisely when the problem has lasted longest. On the
+  incident bench the deviation alert is raised eleven minutes after the step and clears again within the
+  hour; anyone reading that all-clear alone would conclude the server had recovered. So the rule watches its
+  own mean, and reports when the learned normal itself crosses the fixed threshold — 19.7 hours into the
+  incident, two days earlier than the plan asked for. This is the third time this codebase has produced a
+  measure that adjusts to what it is meant to detect, which is why four of the nine tests cover this one
+  behaviour.
 - **A Docker daemon that has become slow is now a signal of its own.** Whiskers makes hundreds of API calls a
   minute and never timed one of them: an overloaded daemon was visible only as things "feeling slow". The
   fleet listing — one call per server per health cycle — is now timed, and a recent median three times the

@@ -108,6 +108,45 @@ Dieser Plan hat eine Besonderheit: **Der Prüfstand existiert bereits.** Die Met
 
 **Abnahme:** Wiedergabe des Prüfstands: die Baseline meldet den Sprung am 20.08. **und** meldet am 23.08., dass ihr Mittelwert über der absoluten Schwelle liegt.
 
+> 🟢 **WP3 erledigt (2026-08-27), Abnahme übertroffen.** Gemessen am Prüfstand:
+>
+> | Zeitpunkt | Meldung | |
+> |---|---|---|
+> | 20.08. 14:13 | `host_cpu_anomaly`, z = 7,3 | 11 Minuten nach dem Sprung |
+> | 20.08. 15:02 | Anomalie „behoben" | die Baseline hat den Fehler absorbiert — **hier würde sie stumm** |
+> | **21.08. 09:43** | **`host_cpu_baseline_drifted`, Mittel 90,2** | **WP3.4 greift, 19,7 h nach dem Sprung** |
+> | 26.08. 15:17 | Anomalie | die Erholung ist ebenfalls eine Abweichung |
+>
+> Der Plan erwartete die Drift-Meldung am 23.08.; sie kommt am **21.08.**, also gut zwei Tage früher. Die
+> Testschranke steht knapp über dem gemessenen Wert (24 h), nicht bei der Planschätzung — eine großzügige
+> Schranke ließe eine Verschlechterung um den Faktor drei unbemerkt durch.
+>
+> **Die dritte Zeile ist der Grund für das ganze Arbeitspaket.** Die Abweichungserkennung verstummt nach
+> knapp einer Stunde, weil der Mittelwert dem Messwert entgegenwandert. Wer diese Entwarnung ohne die
+> Drift-Meldung liest, schließt daraus, der Server habe sich erholt. Ein eigener Test hält genau das fest.
+>
+> **Diese Falle ist in diesem Repo zum dritten Mal aufgetreten:** das Log-Wasserzeichen, das mit jedem
+> Fehlschlag wuchs (SP-2 WP1); die API-Latenz-Grundlinie, die heute Vormittag die Verlangsamung absorbierte,
+> die sie erkennen sollte; und jetzt hier. Deshalb ist WP3.4 härter getestet als WP3.1 — vier der neun Tests
+> gehören ihm.
+>
+> **Der Drift-Wächter ist ausdrücklich von der Anlernphase ausgenommen.** Sind schon die ersten 48 Stunden
+> über der Schwelle verbracht, ist das das Wichtigste, was diese Regel sagen könnte, und „lernt noch" wäre
+> der denkbar schlechteste Moment zu schweigen.
+>
+> **Sigma 4 statt der Lehrbuch-3** (WP3.2): Host-CPU ist nicht normalverteilt — Boden bei null, Decke bei
+> hundert, langer Schwanz legitimer Lastspitzen. Drei Sigma darauf meldet fast täglich. Dazu eine Untergrenze
+> für die Standardabweichung: Ohne sie hat ein Host, der nie schwankt, eine Abweichung nahe null, und die
+> erste Rundungswackelei ist ein unendlicher z-Score — die ruhigsten Server wären die lautesten.
+>
+> **Die absolute Schwelle wird durchgereicht, nicht kopiert.** Zwei Definitionen von „zu hoch" driften
+> auseinander, und der Drift-Wächter würde dann gegen eine Grenze messen, auf die niemand alarmiert.
+>
+> **Prüfstand angepasst:** Der Anlauf beginnt jetzt am 18.08. statt am 19.08. Bei 48 Stunden Anlernphase und
+> einem Sprung am 20.08. um 14:02 blieben sonst nur 38 Stunden — die Baseline hätte noch gelernt und wäre nie
+> zum Zug gekommen. Das ist eine Eigenschaft des Prüfstands, nicht der Regel; ein Prüfstand, der die Regel
+> nicht ausüben kann, beweist aber nichts.
+
 ### WP4: API-Antwortzeit als Signal
 
 **Zweck:** Der Fingerabdruck eines überlasteten Daemons, unabhängig vom Verursacher.
