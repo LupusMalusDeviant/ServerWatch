@@ -83,7 +83,33 @@ Der Plan hat zwei Hälften, die in dieser Reihenfolge laufen müssen: **echter A
 >
 > 🟢 **WP3.2 erledigt** — Single-Flight liegt in `ServerBudget.RunAsync` (Parameter `singleFlightKey`, greift nur im Hintergrund-Lauf: für einen Loop ist ein verworfener Aufruf ein gesparter, für einen Menschen wäre er eine hängende Oberfläche).
 >
-> **Offen aus SP-1:** Die Abfrage sitzt an den vier Stellen, die `ExecuteGuardedAsync` nutzen — **20 der 24 Docker-Aufrufstellen umgehen das Budget weiterhin** (`DockerBudgetCoverageTests` hält den Stand fest, damit er nicht unbemerkt wächst). Und der Feldnachweis über 48 h auf zwei realen Servern steht aus; er braucht einen Deploy.
+> 🟢 **Budget-Abdeckung abgeschlossen (2026-08-27) — und zwar nicht durch das Umstellen aller Stellen.**
+> Von 24 Aufrufstellen laufen jetzt **8 unter dem Budget statt 4**; die verbliebenen 16 sind mit Begründung
+> ausgenommen. Umgestellt wurde alles, was **stetiger Hintergrund-Lesezugriff** ist:
+>
+> | Aufruf | Warum er zählt |
+> |---|---|
+> | Container-Statistik | je Container alle 30 s — die mit Abstand größte Einzelquelle an Docker-Verkehr |
+> | Host-System-Info | je Server je Metrikzyklus |
+> | Container-Zustand | zwei Hintergrundschleifen (Health, Auto-Update) |
+> | Image-Digest | je Image je Update-Durchlauf |
+> | Log-Abruf | der Aufruf, um den es im Vorfall ging (bereits vorher) |
+>
+> **Der Rest bleibt draußen, und der ursprünglich notierte Grund war falsch.** Dort stand, mutierende
+> Operationen seien ausgenommen, weil sie „nie automatisch wiederholt werden dürfen" — `ExecuteGuardedAsync`
+> wiederholt gar nicht, das war nie das Risiko. Der echte Grund ist der **Circuit Breaker**: Er weist Aufrufe
+> an einen Server ab, den er aufgegeben hat, und Start/Stop/Neustart/Entfernen sind genau das, wonach ein
+> Mensch greift, wenn ein Server in Schwierigkeiten steckt — also in dem Moment, in dem der Circuit am
+> ehesten offen ist. Die Reparatur ausgerechnet dann wegzunehmen wiegt schwerer als die eingesparte Last.
+>
+> Dazu die langlaufenden Operationen (Image-Pull, Container-Neuerzeugung): Ein Budget-Platz, der minutenlang
+> gehalten wird, hungert die Gesundheitsprüfung und den Log-Scan desselben Servers aus. Der Deckel ist gegen
+> viele kleine Aufrufe gedacht, nicht gegen diese.
+>
+> Der Ratchet-Test trägt jede dieser Begründungen jetzt im Klartext. Gegenprobe: eine neue Umgehung eingebaut
+> → Test rot mit klarer Meldung.
+>
+> **Offen:** der Feldnachweis über 48 h auf zwei realen Servern — braucht einen Deploy.
 >
 > ⚠️ **Beobachtung, nicht wegerklärt:** In einem von fünf vollen Läufen fiel `BackupServiceTests.Validate_accepts_an_equal_or_older_schema` einmalig aus. In Isolation und in vier Folgeläufen grün; kein Bezug zu dieser Änderung erkennbar (kein Docker-Pfad). Als möglicher Flake festgehalten, nicht als behoben.
 >

@@ -57,7 +57,6 @@ internal sealed class SystemInfoOperations
             // is rebuilt on this very call instead of reporting the server as unreachable.
             var (sysInfo, version) = await _connectionManager.ExecuteAsync(serverId, async c =>
                 (await c.System.GetSystemInfoAsync(), await c.System.GetVersionAsync()));
-            var client = await GetClient(serverId);
 
             info.OperatingSystem = sysInfo.OperatingSystem ?? "";
             info.OsVersion = sysInfo.OSVersion ?? "";
@@ -91,15 +90,22 @@ internal sealed class SystemInfoOperations
             {
                 try
                 {
-                    var (hostCpu, hostMem) = await GetHostResourceUsageAsync(client, serverId);
+                    // Plan-0001 WP6.3: under the budget. This runs once per server on every metrics cycle,
+                    // so it is exactly the kind of steady background traffic the cap exists for — and it was
+                    // taking a bare client, invisible to both the cap and the circuit breaker.
+                    var (hostCpu, hostMem) = await _connectionManager.ExecuteGuardedAsync(
+                        serverId, c => GetHostResourceUsageAsync(c, serverId),
+                        singleFlightKey: $"hostres:{serverId}");
                     info.CpuUsagePercent = hostCpu;
                     info.MemoryUsedBytes = hostMem;
                 }
                 catch
                 {
                     // Fallback: aggregate from running containers (cached stats)
-                    var containers = await client.Containers.ListContainersAsync(
-                        new ContainersListParameters { All = false });
+                    var containers = await _connectionManager.ExecuteGuardedAsync(
+                        serverId,
+                        c => c.Containers.ListContainersAsync(new ContainersListParameters { All = false }),
+                        singleFlightKey: $"sysinfo-list:{serverId}");
                     long totalMemUsed = 0;
                     double totalCpu = 0;
                     var statsTasks = containers.Select(async c =>

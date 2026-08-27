@@ -25,6 +25,12 @@ internal sealed class ImageOperations
     private async Task<DockerClient> GetClient(string? serverId)
         => await _connectionManager.GetClientAsync(serverId);
 
+    /// <summary>Pulls an image. Deliberately NOT under the load budget (Plan-0001 WP6.3).
+    ///
+    /// <para>A pull can run for minutes. The budget's slots are sized for short calls, so holding one for the
+    /// duration of a pull would starve the health checks and the log scan of the same server — trading a
+    /// bounded amount of load for an unbounded amount of blindness. The cap is there to stop many small calls
+    /// piling up, which is not what this is.</para></summary>
     public async Task PullImageAsync(string imageName, IProgress<string>? progress = null, string? serverId = null)
     {
         var client = await GetClient(serverId);
@@ -70,8 +76,12 @@ internal sealed class ImageOperations
     {
         try
         {
-            var client = await GetClient(serverId);
-            var inspect = await client.Images.InspectImageAsync(imageRef);
+            // Plan-0001 WP6.3: under the budget. The image-update checker calls this once per image on every
+            // pass, so it is steady background traffic — and it was taking a bare client, invisible to both
+            // the cap and the circuit breaker.
+            var inspect = await _connectionManager.ExecuteGuardedAsync(
+                serverId, c => c.Images.InspectImageAsync(imageRef),
+                singleFlightKey: $"imagedigest:{imageRef}");
 
             // RepoDigests contains the pull-able digest, e.g. "nginx@sha256:abc..."
             if (inspect.RepoDigests?.Count > 0)

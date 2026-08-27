@@ -169,16 +169,20 @@ internal sealed class ContainerOperations
 
         try
         {
-            var client = await GetClient(serverId);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            // Plan-0001 WP6.3: under the budget. The metrics collector asks this for every container every
+            // 30 seconds — across a fleet that is the single largest source of steady Docker traffic Whiskers
+            // produces, and it was entirely invisible to the cap and the circuit breaker.
+            //
             // Single-shot (Stream=false) returns the stats JSON as a Stream — all we need here. The
             // non-obsolete overload requires an IProgress<JSONMessage> streaming callback; keep the
             // simpler obsolete overload deliberately.
 #pragma warning disable CS0618
-            var response = await client.Containers.GetContainerStatsAsync(
-                containerId,
-                new ContainerStatsParameters { Stream = false },
-                cts.Token);
+            var response = await _connectionManager.ExecuteGuardedAsync(
+                serverId,
+                c => c.Containers.GetContainerStatsAsync(
+                    containerId, new ContainerStatsParameters { Stream = false }, cts.Token),
+                singleFlightKey: $"stats:{containerId}");
 #pragma warning restore CS0618
 
             using var reader = new StreamReader(response);
@@ -241,6 +245,12 @@ internal sealed class ContainerOperations
         }
     }
 
+    // The four operations below stay outside the budget on purpose, and the reason is not the one that was
+    // written here before ("must never be auto-retried" — ExecuteGuardedAsync does not retry, so that was
+    // never the risk). The real reason is the circuit breaker: it refuses calls to a server it has given up
+    // on, and these four are exactly what a person reaches for when a server is in trouble — which is the
+    // moment the circuit is most likely open. Refusing an operator's "stop this container" because Whiskers
+    // has decided the host is unwell would take the fix away at the worst possible time.
     public async Task StartContainerAsync(string containerId, string? serverId = null)
     {
         var client = await GetClient(serverId);
@@ -336,8 +346,11 @@ internal sealed class ContainerOperations
 
     public async Task<(string State, int ExitCode, bool OomKilled)> InspectContainerStateAsync(string containerId, string? serverId = null)
     {
-        var client = await GetClient(serverId);
-        var inspect = await client.Containers.InspectContainerAsync(containerId);
+        // Plan-0001 WP6.3: under the budget. Both callers are background loops — the health monitor and the
+        // auto-updater — so this is steady traffic, not something a person is waiting for.
+        var inspect = await _connectionManager.ExecuteGuardedAsync(
+            serverId, c => c.Containers.InspectContainerAsync(containerId),
+            singleFlightKey: $"inspectstate:{containerId}");
         return (
             inspect.State.Status,
             (int)inspect.State.ExitCode,
