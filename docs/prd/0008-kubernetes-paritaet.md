@@ -4,7 +4,7 @@
 - **Datum:** 2026-08-26
 - **Autor:** @LupusMalusDeviant
 - **Stakeholder:** Betreiber gemischter Flotten (Docker + k3s), Betreiber, die von Docker auf Kubernetes wechseln
-- **Roadmap:** [hardeningAndParity.md](../roadmap/hardeningAndParity.md) — GAP-1; setzt [kubernetesImplement.md](../roadmap/kubernetesImplement.md) Track B.3 fort
+- **Roadmap:** [hardeningAndParity.md](../roadmap/hardeningAndParity.md) — GAP-1
 - **Ersetzt:** —
 
 ## Problem / Motivation

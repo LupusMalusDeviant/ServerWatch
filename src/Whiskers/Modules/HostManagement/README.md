@@ -26,5 +26,4 @@ inline (no separate `*View` split is needed here: the service injections resolve
 they never throw at instantiation, and each page's `OnInitializedAsync` loads through a try/catch). Service
 code stays in [`../../Services/Server/`](../../Services/Server/); `IHostCommandExecutor` remains Core.
 
-See [RoadToSAP](../../../../docs/roadmap/RoadToSAP.md) and
-[`docs/modules/host-management.md`](../../../../docs/modules/host-management.md).
+See [`docs/modules/host-management.md`](../../../../docs/modules/host-management.md).

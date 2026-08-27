@@ -1,6 +1,6 @@
 # Module catalog
 
-Per-module reference for the RoadToSAP module system — see [../roadmap/RoadToSAP.md](../roadmap/RoadToSAP.md)
+Per-module reference for the module system — see [`src/Whiskers/Modules/README.md`](../../src/Whiskers/Modules/README.md)
 and the framework overview in [`src/Whiskers/Modules/README.md`](../../src/Whiskers/Modules/README.md).
 
 Toggle a module with `Features:{id}:Enabled` (e.g. `Features__terminal__Enabled=false`), restart-only.

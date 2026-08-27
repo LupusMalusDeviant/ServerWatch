@@ -1,6 +1,6 @@
 # Modules
 
-The module framework from [RoadToSAP](../../../docs/roadmap/RoadToSAP.md): a lean **Core** plus **modules**
+The module framework: a lean **Core** plus **modules**
 that contribute features and can be switched on/off via `Features:{id}:Enabled`. **Phase 1** is live — the
 pipeline (discovery → services → MCP tools → navigation) is wired, and features are extracted into real
 `Modules/<Name>/` modules one PR at a time (Terminal was first, then Notifications). The transitional

@@ -32,5 +32,4 @@ real services win by last-registration when enabled. The deploy no-op **throws**
 [`../../Services/Templates/`](../../Services/Templates/) and
 [`../../Services/ImageSearch/`](../../Services/ImageSearch/).
 
-See [RoadToSAP](../../../../docs/roadmap/RoadToSAP.md) and
-[`docs/modules/deployment.md`](../../../../docs/modules/deployment.md).
+See [`docs/modules/deployment.md`](../../../../docs/modules/deployment.md).

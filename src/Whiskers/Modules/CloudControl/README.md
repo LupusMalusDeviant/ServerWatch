@@ -27,5 +27,4 @@ power/snapshot dispatch and wants focused, carefully-verified work; the extracti
 Provider code stays in [`../../Services/Cloud/`](../../Services/Cloud/),
 [`../../Services/Hetzner/`](../../Services/Hetzner/), [`../../Services/Hostinger/`](../../Services/Hostinger/).
 
-See [RoadToSAP](../../../../docs/roadmap/RoadToSAP.md) and
-[`docs/modules/cloud-control.md`](../../../../docs/modules/cloud-control.md).
+See [`docs/modules/cloud-control.md`](../../../../docs/modules/cloud-control.md).

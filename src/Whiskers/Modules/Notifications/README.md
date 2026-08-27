@@ -36,5 +36,4 @@ still loads when the module is off (an `@inject` throws at instantiation before 
 lesson from the Terminal pilot). Channel implementations stay in
 [`../../Services/Notifications/`](../../Services/Notifications/).
 
-See [RoadToSAP](../../../../docs/roadmap/RoadToSAP.md) and
-[`docs/modules/notifications.md`](../../../../docs/modules/notifications.md).
+See [`docs/modules/notifications.md`](../../../../docs/modules/notifications.md).

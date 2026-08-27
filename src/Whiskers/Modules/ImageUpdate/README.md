@@ -27,5 +27,4 @@ Service code stays in [`../../Services/ImageUpdate/`](../../Services/ImageUpdate
 [`../../Services/AutoUpdate/`](../../Services/AutoUpdate/); the update MCP tools remain in Core
 [`ContainerTools.cs`](../../Mcp/Tools/ContainerTools.cs).
 
-See [RoadToSAP](../../../../docs/roadmap/RoadToSAP.md) and
-[`docs/modules/image-updates.md`](../../../../docs/modules/image-updates.md).
+See [`docs/modules/image-updates.md`](../../../../docs/modules/image-updates.md).

@@ -14,7 +14,7 @@ Deployment assets — the pieces used to install and run Whiskers, separate from
 
 The image and the release assets are produced by [`.github/workflows/release.yml`](../.github/workflows/release.yml) on every `v*` tag: multi-arch build (`linux/amd64`, `linux/arm64`), a **Trivy scan gate that runs before anything is published** (a CRITICAL fails the whole run), push to GHCR (`latest`, `X.Y.Z`, `X.Y`), then a GitHub Release with an SBOM, checksums, and image-pinned `docker-compose.yml` / `docker-compose.hardened.yml` / `install.sh` attached.
 
-See the [README quick start](../README.md#quick-start) for the user-facing install paths and [`docs/roadmap/outOfTheBox.md`](../docs/roadmap/outOfTheBox.md) (W2) for the design.
+See the [README quick start](../README.md#quick-start) for the user-facing install paths.
 
 ## `tailnet-guard.sh` — for hosts that reach their fleet over Tailscale
 

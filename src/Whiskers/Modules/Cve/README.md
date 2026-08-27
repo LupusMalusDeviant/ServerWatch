@@ -29,4 +29,4 @@ cycle, so it's safe but wants a proper rename rather than an alias workaround).
 Service code stays in [`../../Services/Cve/`](../../Services/Cve/), tools in
 [`../../Mcp/Tools/CveTools.cs`](../../Mcp/Tools/CveTools.cs).
 
-See [RoadToSAP](../../../../docs/roadmap/RoadToSAP.md) and [`docs/modules/cve.md`](../../../../docs/modules/cve.md).
+See [`docs/modules/cve.md`](../../../../docs/modules/cve.md).
