@@ -178,4 +178,63 @@ public class SelfMetricsEndpointTests
         // just because it grew more interesting.
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     });
+
+    [Fact]
+    public async Task Stale_CVE_data_shows_up_as_a_number_on_the_real_endpoint() =>
+        await WithAppAsync(async (client, services) =>
+    {
+        // The claim worth testing is not that CveMetrics computes a number — the unit tests cover that — but
+        // that the number reaches the served output. That is precisely the step that failed unnoticed for the
+        // MCP surface from 0.12.0 to 0.13.0, and it is the step a mocked test cannot see.
+        var store = services.GetRequiredService<Whiskers.Services.Cve.ICveFindingsStore>();
+        store.Set(new Whiskers.Models.Cve.CveScanResult
+        {
+            ServerId = "badwolf",
+            Source = Whiskers.Models.Cve.CveSource.Container,
+            ContainerId = "c-authentik",
+            ContainerName = "authentik-worker-1",
+            ScannedAt = DateTime.UtcNow.AddDays(-50),   // the scanner broke seven weeks ago
+            Findings =
+            [
+                new Whiskers.Models.Cve.CveFinding
+                {
+                    ServerId = "badwolf", Source = Whiskers.Models.Cve.CveSource.Container,
+                    ContainerId = "c-authentik", ContainerName = "authentik-worker-1",
+                    CveId = "CVE-2026-9999", Package = "openssl",
+                    Severity = Whiskers.Models.Cve.CveSeverity.Critical
+                }
+            ]
+        });
+
+        var body = await ScrapeAsync(client);
+
+        Assert.Contains("whiskers_cve_stale_targets{server=\"badwolf\"} 1", body);
+        Assert.Contains("whiskers_cve_findings{server=\"badwolf\",severity=\"Critical\"} 1", body);
+        Assert.Contains("whiskers_cve_distinct_ids 1", body);
+        Assert.Contains("whiskers_cve_data_age_seconds{server=\"badwolf\"}", body);
+    });
+
+    [Fact]
+    public async Task The_CVE_series_carry_no_container_label() =>
+        await WithAppAsync(async (client, services) =>
+    {
+        // The endpoint bounds cardinality by server, never by container: a container label across a large
+        // fleet turns a few dozen series into thousands and fills the time-series database — a monitoring
+        // outage caused by monitoring. Naming the guilty target is the UI's job, not this endpoint's.
+        var store = services.GetRequiredService<Whiskers.Services.Cve.ICveFindingsStore>();
+        store.Set(new Whiskers.Models.Cve.CveScanResult
+        {
+            ServerId = "badwolf", Source = Whiskers.Models.Cve.CveSource.Container,
+            ContainerId = "c-authentik", ContainerName = "authentik-worker-1",
+            ScannedAt = DateTime.UtcNow.AddDays(-50)
+        });
+
+        var body = await ScrapeAsync(client);
+
+        foreach (var line in body.Split('\n').Where(l => l.StartsWith("whiskers_cve_")))
+        {
+            Assert.DoesNotContain("container=", line);
+            Assert.DoesNotContain("authentik-worker-1", line);
+        }
+    });
 }

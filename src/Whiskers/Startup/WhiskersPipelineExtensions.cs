@@ -517,6 +517,38 @@ public static class WhiskersPipelineExtensions
             sb.AppendLine($"whiskers_host_finding_oldest_age_seconds {(open.Count > 0 ? (now - open[0].SinceUtc).TotalSeconds : 0):F0}");
         }
 
+        var cveStore = services.GetService<Whiskers.Services.Cve.ICveFindingsStore>();
+        var cveSettings = services.GetService<Microsoft.Extensions.Options.IOptionsMonitor<CveMonitorSettings>>();
+        if (cveStore is not null && cveSettings is not null)
+        {
+            var interval = TimeSpan.FromHours(Math.Max(1, cveSettings.CurrentValue.CheckIntervalHours));
+            var cve = Whiskers.Services.Cve.CveMetrics.Build(cveStore.GetAll(), interval, now);
+
+            sb.AppendLine("# HELP whiskers_cve_findings Open CVE findings per server and severity. The count of instances, not of distinct vulnerabilities — see whiskers_cve_distinct_ids.");
+            sb.AppendLine("# TYPE whiskers_cve_findings gauge");
+            foreach (var server in cve.PerServer)
+                foreach (var (severity, count) in server.BySeverity)
+                    sb.AppendLine($"whiskers_cve_findings{{server=\"{Esc(server.ServerId)}\",severity=\"{severity}\"}} {count}");
+
+            sb.AppendLine("# HELP whiskers_cve_distinct_ids Distinct CVE identifiers across the fleet. The findings count says how much work the display has; this says how many actual problems there are.");
+            sb.AppendLine("# TYPE whiskers_cve_distinct_ids gauge");
+            sb.AppendLine($"whiskers_cve_distinct_ids {cve.DistinctCveIds}");
+
+            // THE series this section exists for. A failed scan deliberately keeps the previous results rather
+            // than reporting a false all-clear, so a target whose scanner broke months ago looks exactly like
+            // one scanned this morning — same findings, still plausible, simply never changing. The only thing
+            // that tells them apart is how old the data is, and until now nothing was watching it.
+            sb.AppendLine("# HELP whiskers_cve_data_age_seconds Age of the least recently scanned target on this server. A failed scan keeps the old findings, so stale data looks exactly like a clean bill of health — this is the number that tells them apart.");
+            sb.AppendLine("# TYPE whiskers_cve_data_age_seconds gauge");
+            foreach (var server in cve.PerServer)
+                sb.AppendLine($"whiskers_cve_data_age_seconds{{server=\"{Esc(server.ServerId)}\"}} {server.OldestDataAge.TotalSeconds:F0}");
+
+            sb.AppendLine("# HELP whiskers_cve_stale_targets Targets whose data is older than two scan intervals — a scanner that has stopped, not a blip. Alert on this being above zero.");
+            sb.AppendLine("# TYPE whiskers_cve_stale_targets gauge");
+            foreach (var server in cve.PerServer)
+                sb.AppendLine($"whiskers_cve_stale_targets{{server=\"{Esc(server.ServerId)}\"}} {server.StaleTargets}");
+        }
+
         if (exclusions is not null)
         {
             // Plan-0007 WP2.2. The number to watch is not its value but its MOVEMENT: exclusions that appear

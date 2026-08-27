@@ -18,7 +18,8 @@ public class CveTools
         IHttpContextAccessor httpContextAccessor,
         IMcpPermissionService permissionService,
         ICveFindingsStore store,
-        IServerConfigService serverConfig)
+        IServerConfigService serverConfig,
+        Microsoft.Extensions.Options.IOptionsMonitor<Whiskers.Configuration.CveMonitorSettings> settings)
     {
         var denied = McpPermissionCheck.CheckAccess(httpContextAccessor, permissionService, "get_cve_summary");
         if (denied != null) return denied;
@@ -42,6 +43,24 @@ public class CveTools
                 $"  - {s.Name} ({s.Id}): total {sum.TotalCount} " +
                 $"(C:{sum.CriticalCount} H:{sum.HighCount} M:{sum.MediumCount} L:{sum.LowCount})");
         }
+
+        // Which targets are running on old data, by name. The /metrics series deliberately counts stale
+        // targets per server without a container label — a container label across a large fleet multiplies the
+        // series into the thousands — so the number there says THAT something is stale and this says WHAT.
+        // Without this half, an operator sees a count above zero and has nowhere to go with it.
+        var stale = Whiskers.Services.Cve.CveMetrics.StaleTargets(
+            store.GetAll(), TimeSpan.FromHours(Math.Max(1, settings.CurrentValue.CheckIntervalHours)),
+            DateTime.UtcNow);
+        if (stale.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Targets running on stale data — their last scan failed, so these findings are old:");
+            foreach (var t in stale)
+                sb.AppendLine($"  ! {t.ServerId} / {t.Target}: last scanned {t.Age.TotalDays:F1} day(s) ago");
+            sb.AppendLine("  A failed scan keeps the previous results on purpose (no false all-clear), so " +
+                          "these look identical to fresh ones apart from their age.");
+        }
+
         return sb.ToString();
     }
 

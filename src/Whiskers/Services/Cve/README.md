@@ -17,6 +17,30 @@ Findings are **de-duplicated per CVE-ID** for display (one CVE > all real affect
 | `ICveAgeStore.cs` / `CveAgeStore.cs` | Persists (SQLite, `CveFirstSeen` table) when each vulnerability instance was first detected, so the "open for N days" age survives restarts. Recorded after each scan cycle; read when grouping. |
 | `NoopCveServices.cs` | Core no-op defaults (`NoopCveFindingsStore` / `NoopCveMonitorService` / `NoopCveAgeStore`) for when the **Cve module** is off — the findings store + monitor are read by the Core Dashboard/ContainerDetail/Settings pages, which then show no CVE data. Real services win by last-registration when on (RoadToSAP Phase 1). |
 
+## The `whiskers_cve_*` series (2026-08-27)
+
+`CveMetrics` turns the stored results into the numbers `/metrics` publishes. The one worth alerting on is
+**`whiskers_cve_stale_targets`**.
+
+A failed scan deliberately keeps the previous results rather than reporting a false all-clear. That is the
+right trade, and it has a cost nobody had measured: a target whose scanner broke months ago looks exactly like
+one scanned this morning — same findings, still plausible, simply never changing. The Authentik image sat like
+that from July to late August. The only thing separating the two was the age of the data, and nothing watched
+it.
+
+| Series | What it says |
+|---|---|
+| `whiskers_cve_stale_targets{server}` | Targets whose data is older than **two** scan intervals. One missed cycle retries in ~15 min and repairs itself; two consecutive misses is a scanner that is not coming back. Alert on this above zero. |
+| `whiskers_cve_data_age_seconds{server}` | Age of the least recently scanned target. A **maximum**, not a mean — nine fresh targets and one abandoned one would average to something reassuring and wrong. |
+| `whiskers_cve_findings{server,severity}` | Open findings per severity. Severities with nothing in them are absent, not zero. |
+| `whiskers_cve_distinct_ids` | Distinct CVE identifiers fleet-wide. On the real fleet: 550 behind 4658 findings — the findings count is the size of the display, this is the size of the problem. |
+
+**No container labels, deliberately.** The endpoint bounds cardinality by server, never by container: a
+container label across a large fleet turns a few dozen series into thousands and fills the time-series
+database — a monitoring outage caused by monitoring. So the endpoint says *that* something is stale, and
+`get_cve_summary` (MCP) names *which* target, worst first, where one question is asked at a time and
+cardinality costs nothing. Both halves are needed: a count with no name leaves an operator nowhere to go.
+
 ## Results of a server that was removed (2026-08-27)
 
 `PruneServer` only ever runs for servers that still exist, so the results of a server **deleted from the
