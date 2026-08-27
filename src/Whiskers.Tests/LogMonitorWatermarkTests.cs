@@ -80,7 +80,15 @@ public sealed class LogMonitorWatermarkTests : IDisposable
         // gap the window widens by that gap per cycle and any generous tolerance swallows it — an earlier
         // version used 120 ms and could not tell the two apart either. The real cycle interval is 60 s.
         const int gapMs = 400;
-        var windows = new List<TimeSpan>();
+
+        // Each window is judged against the time that ACTUALLY passed before it, not against the other
+        // windows. An earlier version compared them to each other and so assumed every gap was the same
+        // length; on a loaded CI runner one Task.Delay overshot by a second, the window correctly grew with
+        // it, and the test called a healthy run a ratchet. What the fix promises is not "a constant window"
+        // but "a window no wider than the time since the last attempt" — that is the property to assert, and
+        // it holds however badly the machine stutters.
+        var measured = new List<(TimeSpan Window, TimeSpan Elapsed)>();
+        var previousCycleAt = DateTime.UtcNow;
 
         var seenCalls = docker.Calls.Count;
         for (var i = 0; i < 4; i++)
@@ -95,21 +103,24 @@ public sealed class LogMonitorWatermarkTests : IDisposable
             if (docker.Calls.Count > seenCalls)
             {
                 seenCalls = docker.Calls.Count;
-                if (docker.CallsInOrder[^1].Since is { } since) windows.Add(at - since);
+                if (docker.CallsInOrder[^1].Since is { } since)
+                    measured.Add((at - since, at - previousCycleAt));
+                previousCycleAt = at;
             }
         }
 
-        Assert.True(windows.Count >= 3, $"expected at least 3 failing fetches, got {windows.Count}");
+        Assert.True(measured.Count >= 3, $"expected at least 3 failing fetches, got {measured.Count}");
 
-        // Every one of these follows a successful cycle, so each should ask for roughly one gap's worth of
-        // logs. Growing means the watermark is being left behind on failure — the ratchet that turned a slow
-        // container into a permanently failing one.
-        var spread = windows.Max() - windows.Min();
-
-        Assert.True(spread <= TimeSpan.FromMilliseconds(gapMs / 2),
-            $"the requested window keeps growing across failures — windows were " +
-            $"[{string.Join(", ", windows.Select(w => $"{w.TotalMilliseconds:F0}ms"))}]. " +
-            "The ratchet is still there.");
+        // The failed fetch advances the watermark, so the next window spans one cycle gap — never the whole
+        // stretch back to the last SUCCESS. Growing past the gap means the watermark is being left behind on
+        // failure: the ratchet that turned a slow container into a permanently failing one.
+        var tolerance = TimeSpan.FromMilliseconds(150);
+        foreach (var (window, elapsed) in measured)
+            Assert.True(window <= elapsed + tolerance,
+                $"the fetch asked for {window.TotalMilliseconds:F0}ms of logs after only " +
+                $"{elapsed.TotalMilliseconds:F0}ms had passed since the previous attempt — the watermark is " +
+                "being left behind on failure. The ratchet is still there. All windows: " +
+                $"[{string.Join(", ", measured.Select(m => $"{m.Window.TotalMilliseconds:F0}ms/{m.Elapsed.TotalMilliseconds:F0}ms"))}]");
     }
 
     [Fact]
