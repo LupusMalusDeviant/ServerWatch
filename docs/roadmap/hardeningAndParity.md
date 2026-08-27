@@ -139,6 +139,7 @@ GAP-5 sind unberührt** — das sind Wochen, keine Stunden.
 | SP-5 WP4.3 — gestaffelter Wiederanlauf | Gemessen: es entsteht kein Sturm. Mechanismus gegen ein Problem, das die vorhandenen Mechanismen ausschließen |
 | SP-6 WP3/WP4 — Rücknahme, Wiederholungssperre | Der Plan verlangt selbst vier Wochen Beobachtung zuerst |
 | SP-1 — 16 der 24 Docker-Aufrufstellen | Interaktiv oder langlaufend; eine Circuit-Abweisung nähme dem Betreiber die Reparatur im ungünstigsten Moment |
+| SP-4 WP1.3 — Schwellen je Server | Die rollende Baseline löst den Regelfall bereits; die verbleibende Ausnahme gibt es in dieser Flotte nicht, und die richtigen Zahlen kennt heute niemand — **erst messen, dann setzen** (Nutzerentscheidung) |
 
 ### Abnahmen, die ohne laufenden Server nicht zu erbringen sind
 

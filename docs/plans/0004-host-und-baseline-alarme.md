@@ -67,8 +67,26 @@ Dieser Plan hat eine Besonderheit: **Der Prüfstand existiert bereits.** Die Met
 > 12 Minuten nach dem Sprung. Gegengewicht ebenfalls getestet — ein Fünf-Minuten-Peak erzeugt nichts, und
 > sechs Tage Dauerlast erzeugen eine Handvoll Meldungen statt 8.900.
 >
-> Offen aus WP1.3: Schwellen sind pro Instanz konfigurierbar, aber noch nicht **je Server** — dafür braucht
-> es einen Platz in der Serverkonfiguration, und das ist eine eigene Entscheidung über `servers.json`.
+> ⏸️ **WP1.3 wartet auf Betriebsdaten (Nutzerentscheidung 2026-08-27), nicht auf Arbeit.**
+>
+> Der naheliegende Grund für Schwellen je Server — „dieser Host läuft normalerweise heißer als jener" — ist
+> von WP3 bereits erledigt: Die rollende Baseline lernt für jeden Host sein eigenes Normal. Übrig bleibt genau
+> ein Fall, nämlich ein Server, der **absichtlich** dauerhaft über der Schwelle läuft (Build-Knoten,
+> Datenbank bei 95 % RAM). Dort meldet die absolute Regel dauerhaft *und* der Drift-Wächter meldet, weil er
+> per Konstruktion einer Baseline misstraut, die über die absolute Schwelle geklettert ist — zwei
+> Dauermeldungen, beide „funktionieren wie gebaut", beide falsch.
+>
+> **In der heutigen Flotte gibt es diesen Server nicht.** Vier Felder je Server einzuführen, die überall auf
+> dem Standardwert stünden, wäre Vorratsallgemeinheit. Schwerer wiegt: Die richtigen Zahlen sind unbekannt.
+> Der synthetische Prüfstand beweist, dass die Regeln anschlagen, nicht dass sie in einer normalen Woche
+> schweigen — Schwellen zu setzen, bevor man weiß, welcher Server rauscht, hieße raten.
+>
+> **Vorgehen:** eine Woche Betrieb, dann zeigen `whiskers_host_findings_open` und der Wirkungs-Abschnitt,
+> welche Server melden. Danach für genau die eine **gemessene** Zahl setzen.
+>
+> Falls es dann gebraucht wird, ist die ehrlichere Form nicht `CpuThreshold = 95`, sondern ein Kennzeichen
+> `ExpectedToRunHot`: Es sagt die *Absicht* statt einer magischen Zahl, hebt die absolute Schwelle und weist
+> zugleich den Drift-Wächter an, der Baseline dieses Hosts zu trauen. Ein Feld statt vier.
 
 ### WP2: Unerklärte Host-Last
 
