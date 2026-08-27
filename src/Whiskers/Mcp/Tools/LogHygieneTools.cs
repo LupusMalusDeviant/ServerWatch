@@ -21,17 +21,56 @@ namespace Whiskers.Mcp.Tools;
 public class LogHygieneTools
 {
     [McpToolLevel(McpPermissionLevels.Read)]
-    [McpServerTool, Description("Report which containers the log-alert scan steps over and why. Containers on Whiskers' own Docker access path are skipped because every request Whiskers makes is a line in their log — scanning them means scanning the record of the scan. Excluded containers are still covered by health, metric and CVE monitoring; only their log content is ignored. Read-only: this cannot change what is scanned.")]
+    [McpServerTool, Description("Report the log-file situation on the fleet: which container logs are growing without a rotation limit (with size, growth per day, share of the free disk and the exact command to fix it), and which containers the log-alert scan steps over and why. Excluded containers are still covered by health, metric and CVE monitoring; only their log content is ignored. Read-only: this changes nothing and runs nothing — setting a rotation limit recreates the container, which is a person's decision.")]
     public static string GetLogHygieneReport(
         IHttpContextAccessor httpContextAccessor,
         IMcpPermissionService permissionService,
         ILogScanExclusions exclusions,
+        ILogInventory inventory,
         IServerConfigService servers,
         [Description("Limit the report to one server (optional)")] string? serverId = null)
     {
         var denied = McpPermissionCheck.CheckAccess(httpContextAccessor, permissionService, "get_log_hygiene_report");
         if (denied != null) return denied;
 
+        return string.Join("\n\n", InventorySection(inventory, servers, serverId), ExclusionSection(exclusions, servers, serverId));
+    }
+
+    /// <summary>Findings first: an unbounded log is the thing that fills a disk, and the exclusions are only
+    /// context for why some containers are quiet.</summary>
+    private static string InventorySection(ILogInventory inventory, IServerConfigService servers, string? serverId)
+    {
+        var entries = inventory.Current()
+            .Where(e => string.IsNullOrWhiteSpace(serverId) || string.Equals(e.ServerId, serverId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (entries.Count == 0)
+            return "Log inventory: no readings yet. The survey runs daily; on a fresh start the first one is " +
+                   "still pending, and growth rates need a second reading a day later.";
+
+        var findings = entries
+            .Where(e => LogHygieneAdvice.Severity(e) != LogHygieneSeverity.None)
+            .OrderByDescending(e => e.SizeBytes ?? 0)
+            .ToList();
+
+        var unknown = entries.Count(e => e.UnknownReason is not null);
+        var header = $"Log inventory: {entries.Count} container(s) surveyed, {findings.Count} without a rotation limit" +
+                     (unknown > 0 ? $", {unknown} whose size could not be read (reported as unknown rather than guessed)" : "") + ".";
+
+        if (findings.Count == 0) return header + " Nothing is growing without a limit.";
+
+        var lines = findings.Select(e =>
+        {
+            var name = servers.GetServer(e.ServerId)?.Name ?? e.ServerId;
+            var level = LogHygieneAdvice.Severity(e) == LogHygieneSeverity.Alert ? "ALERT" : "note";
+            return $"- [{level}] {LogHygieneAdvice.Describe(e, name)}";
+        });
+
+        return $"{header}\n{string.Join('\n', lines)}\n\n{LogHygieneAdvice.TriggerNotCause}";
+    }
+
+    private static string ExclusionSection(ILogScanExclusions exclusions, IServerConfigService servers, string? serverId)
+    {
         var all = exclusions.Current();
         var scoped = string.IsNullOrWhiteSpace(serverId)
             ? all

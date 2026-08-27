@@ -76,6 +76,12 @@ internal sealed class FakeDocker : IDockerService
     /// <summary>Lines returned regardless of the <c>since</c> watermark, keyed "{serverId}/{containerId}".</summary>
     public Dictionary<string, string> Logs { get; } = new();
 
+    /// <summary>What <see cref="GetLogConfigurationAsync"/> answers, for the log-hygiene inventory.</summary>
+    public Whiskers.Models.ContainerLogConfiguration? LogConfiguration { get; set; }
+
+    public Task<Whiskers.Models.ContainerLogConfiguration?> GetLogConfigurationAsync(string containerId, string? serverId = null)
+        => Task.FromResult(LogConfiguration);
+
     /// <summary>Servers whose container LISTING fails — the host is silent, as in a tailnet outage.</summary>
     public HashSet<string> UnreachableServerIds { get; } = new(StringComparer.OrdinalIgnoreCase);
 

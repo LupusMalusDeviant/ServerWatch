@@ -334,6 +334,31 @@ internal sealed class ContainerOperations
         );
     }
 
+    /// <summary>Reads the container's log-driver configuration (Plan-0007 WP3).
+    ///
+    /// <para>Routed through the guarded path: this runs once per container per day across the whole fleet, and
+    /// an inventory that floods the host it is inventorying would be the 2026-08-26 incident one level down.
+    /// The single-flight key collapses concurrent asks about the same container.</para></summary>
+    public async Task<ContainerLogConfiguration?> GetLogConfigurationAsync(string containerId, string? serverId = null)
+    {
+        return await _connectionManager.ExecuteGuardedAsync(serverId, async client =>
+        {
+            var inspect = await client.Containers.InspectContainerAsync(containerId);
+            var log = inspect.HostConfig?.LogConfig;
+            if (log is null) return null;
+
+            var config = log.Config ?? new Dictionary<string, string>();
+            config.TryGetValue("max-size", out var maxSize);
+            config.TryGetValue("max-file", out var maxFile);
+
+            return new ContainerLogConfiguration(
+                string.IsNullOrWhiteSpace(log.Type) ? "json-file" : log.Type,
+                string.IsNullOrWhiteSpace(maxSize) ? null : maxSize,
+                string.IsNullOrWhiteSpace(maxFile) ? null : maxFile,
+                string.IsNullOrWhiteSpace(inspect.LogPath) ? null : inspect.LogPath);
+        }, singleFlightKey: $"logconfig:{containerId}");
+    }
+
     public async Task<List<KeyValuePair<string, string>>> GetContainerEnvAsync(string containerId, string? serverId = null)
     {
         var client = await GetClient(serverId);

@@ -7,6 +7,16 @@ All notable changes to Whiskers are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Container logs growing without a rotation limit are now reported before the disk fills.** A daily survey
+  reads each container's log driver configuration and the size of its log file, works out the growth per day
+  from consecutive readings, and judges it **against the free space on that host** — 150 MB is a footnote next
+  to 10 GB of headroom and an alert next to 200 MB, so an absolute threshold would be wrong nearly everywhere.
+  A size that cannot be read is reported as *unknown*, never as zero and never estimated. The alert carries
+  the compose snippet, the exact recreate command for that container, and the `daemon.json` default that
+  stops it happening to the next one — and says plainly that applying it recreates the container. It never
+  runs anything. Findings and exclusions are both in the `get_log_hygiene_report` MCP tool. Every message
+  states that this removes the *trigger* of the 2026-08-26 incident and not its cause, so that closing this
+  ticket does not read like closing the incident.
 - **The log scan no longer reads the record of its own traffic.** The two containers that triggered the
   2026-08-26 incident were the tunnel and socket proxy Whiskers reaches Docker through: every request it makes
   is a line in their logs, and in two weeks those logs reached 822 MB. Containers on the access path are now

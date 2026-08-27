@@ -156,6 +156,8 @@ public static class WhiskersHostingExtensions
         builder.Services.AddSingleton<Whiskers.Services.Observability.ILoopSuspensionService, Whiskers.Services.Observability.LoopSuspensionService>();
         // Access-path detection for the log scan (Plan-0007 WP1). The self-host set is resolved once at
         // registration: which servers can hold OUR container is a property of the fleet configuration.
+        builder.Services.AddSingleton<Whiskers.Services.LogMonitor.Hygiene.ILogInventory, Whiskers.Services.LogMonitor.Hygiene.LogInventory>();
+        builder.Services.AddHostedService<Whiskers.Services.LogMonitor.Hygiene.LogHygieneMonitor>();
         builder.Services.AddSingleton<Whiskers.Services.LogMonitor.Hygiene.ILogScanExclusions>(sp =>
             new Whiskers.Services.LogMonitor.Hygiene.LogScanExclusions(
                 sp.GetRequiredService<ILogger<Whiskers.Services.LogMonitor.Hygiene.LogScanExclusions>>(),

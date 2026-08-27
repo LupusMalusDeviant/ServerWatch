@@ -27,6 +27,7 @@ public static class NotificationFormatter
         "server_recovered" => ("Server reachable again", "Info"),
         // Whiskers throttling ITSELF. Never silent: a self-imposed pause that nobody is told about
         // turns "quiet" into "blind", and hides the next incident behind the fix for the last one.
+        "log_rotation_missing" => ("Container log growing without a rotation limit", "Warning"),
         "loops_paused" => ("Background checks paused for this server", "Warning"),
         "loops_resumed" => ("Background checks running again", "Info"),
         "monitoring_stalled" => ("Nothing is being checked here", "Error"),
@@ -61,6 +62,7 @@ public static class NotificationFormatter
         if (e.EventType == "cve_finding") return "cves";
         if (e.EventType is "server_unreachable" or "server_recovered"
                 or "server_throttled" or "server_throttling_ended") return "servers";
+        if (e.EventType == "log_rotation_missing") return "servers";
         if (e.EventType is "loops_paused" or "loops_resumed") return "servers";
         if (e.EventType is "monitoring_stalled" or "monitoring_resumed") return "servers";
         if (e.EventType is "log_scan_suspended" or "log_scan_resumed") return "logs";

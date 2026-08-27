@@ -25,6 +25,10 @@ public interface IDockerService
     Task<Dictionary<string, ServerSystemInfo>> GetAllServerSystemInfoAsync();
     Task<string?> GetImageDigestAsync(string imageRef, string? serverId = null);
     Task<string> RecreateContainerAsync(string containerId, string? serverId = null, IProgress<string>? progress = null);
+    /// <summary>The container's log-driver configuration and log file path, or null when Docker reports
+    /// none. Used by the log-hygiene inventory (Plan-0007 WP3).</summary>
+    Task<ContainerLogConfiguration?> GetLogConfigurationAsync(string containerId, string? serverId = null);
+
     Task<List<KeyValuePair<string, string>>> GetContainerEnvAsync(string containerId, string? serverId = null);
 
     // C12 update-rollback: capture the pre-update snapshot (old image ID + full container config as JSON) so a

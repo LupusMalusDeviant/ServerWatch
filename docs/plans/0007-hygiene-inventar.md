@@ -83,7 +83,15 @@ Dieser Plan ist unabhängig von allen anderen und billig. Er nimmt den **Auslös
 
 ## 🟢 Stand der Umsetzung (2026-08-26)
 
-**Umgesetzt: WP1 und WP2 vollständig, WP-MCP im Kern.** 697/697 Tests grün. Nicht deployt, nicht gepusht.
+**Umgesetzt: WP1–WP4 und WP-MCP.** 713/713 Tests grün. Nicht deployt, nicht gepusht.
+
+**Offen bleibt nur WP2.1 als Ansicht** (die Ausschlussliste in der Serveransicht) — Kennzahl, MCP-Bericht und
+Meldungen stehen, die Oberfläche kommt mit dem UI-Block.
+
+**Nicht abgenommen, weil es einen Server braucht:** „Ein künstlich auf 150 MB gebrachtes Log erscheint mit
+korrekter Größe und plausibler Wachstumsrate (Abweichung < 20 % gegen `du -sh`)" und „Der ausgegebene Befehl
+läuft auf einem Testserver ohne Nacharbeit". Beides sind Messungen am echten Host; die Logik dahinter ist
+getestet, die Übereinstimmung mit der Wirklichkeit nicht.
 
 | Paket | Stand | Nachweis |
 |---|---|---|
@@ -93,7 +101,16 @@ Dieser Plan ist unabhängig von allen anderen und billig. Er nimmt den **Auslös
 | WP2.1 Sichtbar mit Begründung | ✅ *ohne UI* | `Current()` + `get_log_hygiene_report`; die Serveransicht fehlt noch |
 | WP2.2 Kennzahl | ✅ | `whiskers_log_scan_exclusions{server,reason}` auf `/metrics` |
 | WP-MCP.1/.2 | ✅ | `get_log_hygiene_report` (read), im Katalog, `logmonitor` 3 → 4 Werkzeuge |
-| WP3 Log-Inventar, WP4 Behebungsbefehl | ⬜ offen | nächster Schritt |
+| WP3.1 Tägliche Prüfung | ✅ | `LogHygieneMonitor`, 24 h, ein Inspect + ein `stat` je Container, unter dem Budget |
+| WP3.2 `unbekannt` statt schätzen | ✅ | `SizeBytes` ist `null` mit Begründung; Test verlangt, dass daraus **kein** Befund wird |
+| WP3.3 Wachstumsrate | ✅ | aus zwei Lesungen, unter einer Stunde Abstand bewusst kein Wert |
+| WP3.4 Relativ zum freien Platz | ✅ | `ShareOfFreeDisk`, Schwelle 25 %; ohne `df` greift eine 1-GB-Untergrenze |
+| WP4.1 Hinweis ohne Meldung | ✅ | `LogHygieneSeverity.Note` erzeugt keine Benachrichtigung |
+| WP4.2 Meldung über Schwelle | ✅ | `log_rotation_missing`, Wiederholung frühestens nach 7 Tagen |
+| WP4.3 Wörtlicher Befehl | ✅ | Compose-Schnipsel + `--force-recreate`; „RECREATES" steht im Text |
+| WP4.4 Auslöser ≠ Ursache | ✅ | `TriggerNotCause` in jeder Meldung und im MCP-Bericht; per Test festgehalten |
+| WP4.5 daemon.json-Default | ✅ | im selben Text |
+| WP-MCP Inventarteil | ✅ | `get_log_hygiene_report` liefert jetzt Befunde **und** Ausschlüsse |
 
 ### Was die Erkennung bewusst NICHT kann
 

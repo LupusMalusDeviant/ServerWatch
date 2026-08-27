@@ -6,6 +6,9 @@ Why the log-alert scan steps over certain containers, and how that decision is m
 |---|---|
 | `ILogScanExclusions.cs` | The contract: which containers are skipped, with a machine-readable reason and a human-readable justification. |
 | `LogScanExclusions.cs` | Access-path detection plus the `SERVERWATCH_SELF_CONTAINERS` override. |
+| `ILogInventory.cs` / `LogInventory.cs` | The daily reading: rotation limit, log file size, growth per day, free disk. |
+| `LogHygieneAdvice.cs` | Turns a reading into a severity, a description with a deadline, and a runnable command. |
+| `LogHygieneMonitor.cs` | Runs the survey once a day and raises `log_rotation_missing` when a finding crosses the threshold. |
 
 ## The feedback loop this ends
 
@@ -43,3 +46,33 @@ mean the detection has grown too greedy.
 
 Exclusion applies to the **log scan only**. These containers stay under health, metric and CVE monitoring —
 their log content is worthless to us, their state is not.
+
+## The inventory: unknown is a real answer
+
+The survey runs **once a day**: one Docker inspect and one `stat` per container. A monitor that polled the
+disk it is worried about would be the same incident one level down, and growth rates need consecutive
+readings anyway.
+
+Three rules keep it honest:
+
+- **A size that cannot be read is reported as unknown, never as zero and never estimated.** A zero would read
+  as "this log is empty" — the opposite of the truth on a host we cannot see into — and an estimate would be
+  acted on as if it had been measured. The reason is carried with it, because an unexplained blank is
+  indistinguishable from a container with nothing in its log.
+- **The threshold is a share of the free disk, not a number of megabytes.** 150 MB is a note next to 10 GB of
+  headroom and an alert next to 200 MB. Where `df` cannot be read there is no denominator, so a plain size
+  floor takes over — staying quiet about a 2 GB log because one command failed would be the worse error.
+- **One reading is a size; two are a trend.** Until the second reading the report says so instead of implying
+  a rate it has not measured. The number that makes people act is not "150 MB", it is "this fills the disk on
+  Thursday".
+
+## It hands over the command; it does not run it
+
+Setting a rotation limit recreates the container, and a restart is a decision with consequences. The alert
+carries the compose snippet, the exact recreate command for that container, and the `daemon.json` default that
+stops it happening to the *next* container — and it says out loud that the container will be recreated. An
+operator who discovers the restart afterwards will not trust the next suggestion.
+
+Every message repeats that this removes the **trigger** of the 2026-08-26 incident and not its cause. The
+cause was a log fetch that was abandoned rather than cancelled. Symptom relief that reads like a cure is how
+the real fix gets postponed, so the wording refuses to allow it — and a test holds that sentence in place.
