@@ -20,6 +20,14 @@ All notable changes to Whiskers are documented here. The format follows
   the request. This affected the pre-existing container metrics too, not only the new self-metrics.
 
 ### Added
+- **"Did the automatic actions help?" is now a section on `/self-status`**, directly above the timeline that
+  says what Whiskers did. A hit rate is shown only once at least five outcomes have been judged — "67%" from
+  three attempts reads as a measurement and is a coin toss — and it is marked unreliable when more outcomes
+  could not be measured than could, because such a number describes the checking rather than the actions.
+  Unmeasurable outcomes never enter the rate and are never left out of the table either: a gap that is not
+  shown is coverage the page would be silently claiming. Rows are ordered by how much attention they need,
+  since somebody opening the page is asking "is any of this working?" and a good rate is not an answer to
+  that.
 - **Automatic actions are now checked against a promise made before they run.** Until now an action counted
   as successful when the call returned without an error — not when the problem went away, which is the
   incident's own confusion one level up. Every automatic action kind must declare how it can be checked

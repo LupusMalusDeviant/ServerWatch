@@ -78,6 +78,30 @@ Mit SP-1, SP-2 und SP-5 kommen drei weitere automatische Eingriffe hinzu. Ohne R
 
 **Abnahme:** Zu fünf zufälligen Aktionen lässt sich die vollständige Kette rekonstruieren.
 
+> 🟢 **WP5.1/5.2 erledigt (2026-08-27)** — als Abschnitt auf `/self-status` statt als eigene Seite. Er steht
+> direkt über der Aktions-Zeitachse aus SP-3: Die Zeitachse sagt, *was* Whiskers getan hat, dieser Abschnitt,
+> *ob es geholfen hat*. Nebeneinander sind das eine Geschichte, auf zwei Seiten verteilt zwei Fragmente.
+>
+> **Die Urteilslogik liegt in `OutcomePresenter`, nicht in der Ansicht** — und das Urteil ist nicht die
+> Prozentzahl (die ist Arithmetik), sondern ob sie überhaupt gelesen werden darf:
+>
+> - **Unter fünf bewerteten Ausgängen wird gar keine Quote gezeigt.** „67 %" aus drei Versuchen liest sich
+>   wie eine Messung und ist ein Münzwurf. Nichts zu zeigen ist die ehrliche Antwort; eine Zahl zu zeigen
+>   lädt zu einer Entscheidung ein, die sie nicht trägt.
+> - **Überwiegen die nicht messbaren Ausgänge, gilt die Quote als unzuverlässig** und wird ausdrücklich so
+>   ausgewiesen. Sie beschriebe sonst die Prüfung, nicht die Aktionen.
+> - **Nicht messbare Ausgänge zählen nie in die Quote — und werden nie weggelassen.** Eine Lücke, die nicht
+>   gezeigt wird, ist Abdeckung, die die Tabelle stillschweigend behauptet.
+>
+> Sortiert wird nach Aufmerksamkeitsbedarf: unzuverlässig vor schlecht vor gut. Wer die Seite öffnet, fragt
+> „funktioniert davon irgendetwas?", und eine gute Quote ist auf diese Frage keine Antwort.
+>
+> Gegenprobe: Regel entfernt, die nicht messbare Ausgänge die Quote entwerten lässt → der Test dazu wird rot.
+>
+> **Offen aus WP5.2:** Der Klick von einer Zeile in die vollständige Kette (Auslöser → Aktion → Ergebnis) ist
+> noch nicht verlinkt. Die `CorrelationId` steht an jedem Eintrag und die Kette ist per Abfrage vollständig;
+> was fehlt, ist die Detailansicht dazu.
+
 ### WP-MCP: Agenten-Oberfläche
 
 **Zweck:** Das Paket ist erst fertig, wenn der Agent es benutzen kann — siehe [PRD-0013](../prd/0013-mcp-und-agentenoberflaeche.md).
@@ -107,7 +131,7 @@ gepusht. **WP3 und WP4 bewusst nicht** — siehe unten.
 | WP5.1/5.3 Trefferquote + offene Fenster | ✅ *ohne Ansicht* | `TalliesAsync`, `OverdueCountAsync`, MCP-Bericht |
 | WP-MCP | ✅ | `get_action_outcomes` (read), `all-in-one` 45 → 46 |
 | WP3 Rücknahme, WP4 Wiederholungssperre | ⏸️ **absichtlich offen** | siehe unten |
-| WP5.2 Ansicht | ⬜ offen | UI |
+| WP5.1/5.2 Ansicht | ✅ | Abschnitt „Did the automatic actions help?" auf `/self-status` |
 
 ### WP3/WP4 warten — nach der Empfehlung dieses Plans
 

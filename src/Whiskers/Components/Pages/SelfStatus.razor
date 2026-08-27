@@ -14,6 +14,8 @@
 @inject IServerConfigService ServerConfig
 @inject Whiskers.Services.AuditLog.IAuditLogService AuditLog
 @inject Whiskers.Services.Notifications.IInAppNotificationStore Alerts
+@inject Whiskers.Services.Observability.Outcomes.IActionOutcomeService Outcomes
+@using Whiskers.Services.Observability.Outcomes
 @implements IDisposable
 
 @* "Is Whiskers still working?" — Plan-0003 WP4.
@@ -160,6 +162,71 @@ else
     </MudTable>
 }
 
+@* Plan-0006 WP5. The question this answers is not "what did Whiskers do" — the timeline below covers that
+   — but "did any of it help". Whiskers has always counted an action as successful when the call returned
+   without an error, and this section is the first place that assumption is put next to a measurement. *@
+<MudText Typo="Typo.h6" Class="mt-6 mb-2">Did the automatic actions help?</MudText>
+
+@if (_outcomeRows.Count == 0)
+{
+    <MudText Typo="Typo.body2" Class="mb-4">
+        Whiskers has taken no automatic actions in the last 7 days.
+    </MudText>
+}
+else
+{
+    <MudTable Items="@_outcomeRows" Dense="true" Hover="true" Class="mb-2">
+        <HeaderContent>
+            <MudTh>Action</MudTh>
+            <MudTh>Effective</MudTh>
+            <MudTh>Worked / changed nothing</MudTh>
+            <MudTh>Not measurable</MudTh>
+            <MudTh>Still open</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Action">@context.ActionKind</MudTd>
+            <MudTd DataLabel="Effective">
+                @if (context.HitRate is { } rate)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                             Color="@(context.Trust == RateTrust.Unreliable ? Color.Default : rate >= 0.7 ? Color.Success : Color.Warning)">
+                        @($"{rate * 100:0}%")
+                    </MudChip>
+                    @if (context.Trust == RateTrust.Unreliable)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-inline ml-1">unreliable</MudText>
+                    }
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption">—</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Worked / changed nothing">@context.Worked / @context.DidNotWork</MudTd>
+            @* Never folded into the rate, and never left out either: a gap that is not shown is coverage
+               the table is silently claiming. *@
+            <MudTd DataLabel="Not measurable">@context.NotMeasurable</MudTd>
+            <MudTd DataLabel="Still open">@context.Pending</MudTd>
+        </RowTemplate>
+    </MudTable>
+
+    @foreach (var row in _outcomeRows.Where(r => r.Caveat.Length > 0))
+    {
+        <MudText Typo="Typo.caption" Class="d-block"><b>@row.ActionKind:</b> @row.Caveat</MudText>
+    }
+}
+
+@if (_overdueWarning.Length > 0)
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2 mb-4">@_overdueWarning</MudAlert>
+}
+
+<MudText Typo="Typo.caption" Class="mb-4 d-block">
+    An action that changed nothing usually means the cause was somewhere other than where the action was
+    aimed. For Whiskers' own throttles it means something sharper: monitoring was taken off a server for no
+    benefit. Rollback is deliberately not automatic yet — the plan asks for four weeks of these numbers first.
+</MudText>
+
 @* Plan-0003 WP5 — "what happened at 14:02?". Self-inflicted load is the hardest kind to attribute: the
    curve shows the effect and nothing shows the cause. Human actions and Whiskers' own decisions belong on
    one list, because a pause or an open circuit changes the numbers with nobody having touched the fleet.
@@ -223,6 +290,8 @@ else
     private IReadOnlyList<LogScanExclusion> _exclusions = Array.Empty<LogScanExclusion>();
     private IReadOnlyList<UnreadContainerRow> _notRead = Array.Empty<UnreadContainerRow>();
     private IReadOnlyList<TimelineEntry> _timeline = Array.Empty<TimelineEntry>();
+    private IReadOnlyList<OutcomeRow> _outcomeRows = Array.Empty<OutcomeRow>();
+    private string _overdueWarning = "";
     private readonly string _timeZoneLabel = TimeZoneInfo.Local.StandardName;
     private int _stalled;
     private Timer? _timer;
@@ -270,12 +339,19 @@ else
             var alerts = await Alerts.QueryAsync(severity: null, eventType: null, skip: 0, take: 200);
 
             _timeline = ActionTimeline.Build(audit, alerts, serverId: null, sinceUtc: since);
+
+            // Plan-0006 WP5.1/5.3. Seven days rather than the timeline's six hours: a hit rate needs enough
+            // outcomes to mean anything, and most action kinds fire far less often than once an hour.
+            _outcomeRows = OutcomePresenter.Rows(await Outcomes.TalliesAsync(DateTime.UtcNow.AddDays(-7)));
+            _overdueWarning = OutcomePresenter.OverdueWarning(await Outcomes.OverdueCountAsync(DateTime.UtcNow));
         }
         catch
         {
             // The timeline is context, not a check. If the database is unhappy the rest of this page — which
             // reads process memory and is exactly what you need when things are going wrong — must still render.
             _timeline = Array.Empty<TimelineEntry>();
+            _outcomeRows = Array.Empty<OutcomeRow>();
+            _overdueWarning = "";
         }
     }
 
