@@ -81,7 +81,7 @@ Dieser Plan setzt **zwingend** auf Plan-0001 auf. Ohne echten Abbruch entlastet 
 >
 > Dazu ein dritter, kleinerer Fund: `FakeDocker.Calls` war ein `ConcurrentBag`, dessen Aufzählung nicht der Einfügereihenfolge folgt — `Last()` lieferte den **ersten** Aufruf. Auf `ConcurrentQueue` umgestellt und ein `CallsInOrder`-Zugriff ergänzt.
 >
-> **Offen aus SP-2:** WP5 (Sichtbarkeit in der Oberfläche und die nicht abschaltbare Aufsichtsregel „letzter erfolgreicher Scan älter als 3 Intervalle"). WP5.3 ist der wichtigere Teil, weil er auch greift, wenn der Meldeweg versagt — er braucht aber die Selbstbeobachtung aus SP-3 als Datenquelle.
+> 🟢 **SP-2 vollständig** (Stand 2026-08-27). WP5.3 (Aufsichtsregel) in `d677c33`, WP5.1/5.2 (Sichtbarkeit) in `5a260b3`. Offen ist nur noch die Abnahme am laufenden Server, die einen Deploy braucht.
 
 ### WP5: Sichtbarkeit und Aufsicht
 

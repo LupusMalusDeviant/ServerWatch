@@ -20,19 +20,23 @@ public class MetricsCollectorService : BackgroundService
 
     // Host-level rules (Plan-0004). Held here rather than injected: the breach state is this loop's state,
     // exactly like _alert above, and it advances on sample time so it can also be driven by a replay.
-    private readonly Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator _hostLoad = new();
+    // Injected rather than owned: /metrics reads its open-findings list (Plan-0004 WP5.4), and a private
+    // field would have made the "is the closing path working?" number the one number nobody can see.
+    private readonly Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator _hostLoad;
     private DateTime _lastPrune;                 // OPT-2: prune at most hourly, not every 30s cycle
     private const int MaxStatsConcurrency = 8;   // OPT-11.2: bound the per-container stats fan-out
 
     public MetricsCollectorService(
         IServiceProvider services,
         IOptionsMonitor<MetricAlertSettings> alertSettings,
+        Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator hostLoad,
         IOptionsMonitor<MetricsSettings> metricsSettings,
         ILogger<MetricsCollectorService> logger,
         Whiskers.Services.Observability.SelfMetrics.ISelfMetrics selfMetrics)
     {
         _services = services;
         _alertSettings = alertSettings;
+        _hostLoad = hostLoad;
         _metricsSettings = metricsSettings;
         _logger = logger;
         _selfMetrics = selfMetrics;
@@ -207,10 +211,14 @@ public class MetricsCollectorService : BackgroundService
 
                         foreach (var finding in _hostLoad.Evaluate(sample))
                         {
-                            _logger.LogWarning("Host alert on {Server}: {Summary}", finding.ServerName, finding.Summary);
+                            _logger.Log(
+                                finding.What == Whiskers.Services.Metrics.HostLoad.FindingKind.Cleared
+                                    ? LogLevel.Information : LogLevel.Warning,
+                                "Host {What} on {Server}: {Summary}",
+                                finding.What, finding.ServerName, finding.Summary);
                             await notify.SendAsync(new NotificationEvent
                             {
-                                EventType = finding.Kind,
+                                EventType = finding.EventType,
                                 ServerId = finding.ServerId,
                                 ServerName = finding.ServerName,
                                 ContainerName = finding.ServerName,

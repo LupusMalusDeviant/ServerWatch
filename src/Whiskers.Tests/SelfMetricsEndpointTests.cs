@@ -159,6 +159,17 @@ public class SelfMetricsEndpointTests
     });
 
     [Fact]
+    public async Task The_open_host_findings_are_exported() => await WithAppAsync(async (client, _) =>
+    {
+        // Plan-0004 WP5.4. A monitor whose alerts never close stops being read long before anyone works out
+        // why, so the count of unclosed findings and the age of the oldest are numbers you can alert on.
+        var body = await ScrapeAsync(client);
+
+        Assert.Contains("whiskers_host_findings_open", body);
+        Assert.Contains("whiskers_host_finding_oldest_age_seconds", body);
+    });
+
+    [Fact]
     public async Task The_endpoint_stays_shut_without_the_token() => await WithAppAsync(async (client, _) =>
     {
         var response = await client.GetAsync("/metrics");

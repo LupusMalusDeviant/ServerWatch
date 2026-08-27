@@ -43,7 +43,7 @@ Die wichtigste Einzelkennzahl ist nicht ein Fehlerzähler, sondern **das Alter d
 >
 > Damit ist der konkrete blinde Fleck aus dem PRD geschlossen: Ein K8s-Host lieferte bisher gar keine Gesundheits-, Metrik-, CVE- oder Update-Daten, und das ist auf einem Dashboard nicht davon zu unterscheiden, dass dort nichts Auffälliges ist. Ein Test hält beide Richtungen fest — alle vier Loops markieren den K8s-Server, und der Docker-Host wird **nicht** fälschlich als übersprungen geführt, denn ein falscher Skip würde eine echte Lücke verdecken.
 >
-> **Offen aus SP-3:** WP3.2 (Persistenz in eigener Tabelle, additive Migration in beide Assemblies), WP4 (Ansicht), WP5 (Aktions-Zeitachse), WP6 (Leerlaufkosten belegen).
+> 🟢 **SP-3 bis auf eine Messung fertig** (Stand 2026-08-27). WP3.2 Persistenz in `eb23da9`, WP4 Ansicht und WP5 Zeitachse in `6f1851a`/`77d03f7`, WP6.2/6.3 in `eb23da9`. **Offen: WP6.1** — die Leerlaufmessung über 30 min mit und ohne Selbstmessung; die braucht einen laufenden Host und lässt sich lokal nicht ersetzen.
 >
 > ⚠️ **Bekannter Flake:** In etwa 2 von 11 vollen Läufen fällt genau **ein** Test aus, beim einzigen Mal, an dem der Name erfasst wurde, `BackupServiceTests.Validate_accepts_an_equal_or_older_schema`. In Isolation und in allen gezielten Wiederholungen grün, kein Bezug zu den Änderungen dieses Pakets erkennbar. Festgehalten, nicht behoben.
 

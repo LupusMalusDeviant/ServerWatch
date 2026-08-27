@@ -121,6 +121,173 @@ public class HostLoadReplayTests
         Assert.Empty(Replay(BurgCloudIncidentSeries.Build()).Where(f => f.Kind == "host_memory_high"));
     }
 
+    // --- WP5: one open finding, escalation, all-clear -----------------------------------------------------
+
+    /// <summary>A series that goes high, stays high for `highMinutes`, then drops to `after` and stays there.</summary>
+    private static List<HostSample> Spike(int highMinutes, double high = 98.0, double after = 9.0, int tailMinutes = 60)
+    {
+        var start = new DateTime(2026, 8, 19, 0, 0, 0, DateTimeKind.Utc);
+        var series = new List<HostSample>();
+        for (var i = 0; i < highMinutes + tailMinutes; i++)
+            series.Add(new HostSample(
+                start.AddMinutes(i), "badwolf", "Badwolf",
+                i < highMinutes ? high : after, 24.0, 1e9, 4e9, CoreCount: 2));
+        return series;
+    }
+
+    [Fact]
+    public void A_finished_incident_is_closed_with_an_all_clear()
+    {
+        // The gap in the first cut of this package: a server that went from 98% back to 9% produced silence.
+        // The operator was told about the fire and never told it was out — after which the next alert is read
+        // as "probably still the old one".
+        var findings = Replay(Spike(highMinutes: 30));
+
+        var cpu = findings.Where(f => f.Kind == "host_cpu_high").ToList();
+        Assert.Equal(FindingKind.Raised, cpu[0].What);
+        Assert.Equal(FindingKind.Cleared, cpu[^1].What);
+        Assert.Contains("back to 9% CPU", cpu[^1].Summary);
+        Assert.Contains("over the threshold for 30 minutes", cpu[^1].Summary);
+    }
+
+    [Fact]
+    public void The_plan_acceptance_case_produces_exactly_one_alert_and_one_all_clear()
+    {
+        // Plan-0004 WP5 verbatim: a five-minute peak produces nothing; a thirty-minute state produces exactly
+        // one alert, closed at the end.
+        Assert.Empty(Replay(Spike(highMinutes: 5)).Where(f => f.Kind == "host_cpu_high"));
+
+        var sustained = Replay(Spike(highMinutes: 30)).Where(f => f.Kind == "host_cpu_high").ToList();
+
+        Assert.Equal(2, sustained.Count);
+        Assert.Equal(FindingKind.Raised, sustained[0].What);
+        Assert.Equal(FindingKind.Cleared, sustained[1].What);
+    }
+
+    [Fact]
+    public void A_server_that_only_just_dips_below_the_threshold_is_not_declared_clear()
+    {
+        // The hysteresis, tested where it actually bites. A host that falls from 98% to 87% and stays there
+        // is barely better than it was: it is under the line but nowhere near recovered. Declaring an
+        // all-clear would tell the operator the problem is over while the machine is still nearly saturated,
+        // and the next time it crosses back the alert reads like a new incident rather than a continuation.
+        //
+        // The earlier version of this test alternated across the threshold every minute and proved nothing —
+        // the alternation was faster than the confirmation window, so no all-clear could form with OR without
+        // the margin. It passed against a build with the hysteresis removed.
+        var start = new DateTime(2026, 8, 19, 0, 0, 0, DateTimeKind.Utc);
+        var series = new List<HostSample>();
+        for (var i = 0; i < 120; i++)
+        {
+            var cpu = i < 30 ? 98.0 : 87.0;   // 87 is below the 90 threshold but above the 85 clear line
+            series.Add(new HostSample(start.AddMinutes(i), "wobbly", "Wobbly", cpu, 24.0, 1e9, 4e9, CoreCount: 2));
+        }
+
+        var findings = Replay(series).Where(f => f.Kind == "host_cpu_high").ToList();
+
+        Assert.Equal(FindingKind.Raised, Assert.Single(findings).What);
+    }
+
+    [Fact]
+    public void A_real_recovery_below_the_clear_line_does_produce_the_all_clear()
+    {
+        // The counterweight: the margin must not swallow genuine recoveries, or the finding never closes and
+        // WP5.4's stale-findings count climbs forever.
+        var findings = Replay(Spike(highMinutes: 30, after: 84.0)).Where(f => f.Kind == "host_cpu_high").ToList();
+
+        Assert.Equal(
+            new[] { FindingKind.Raised, FindingKind.Cleared },
+            findings.Select(f => f.What));
+    }
+
+    [Fact]
+    public void A_breach_that_ends_before_it_was_ever_announced_stays_silent()
+    {
+        // Otherwise the first thing an operator hears about a problem is that it is over — which is noise
+        // dressed as information.
+        Assert.Empty(Replay(Spike(highMinutes: 5)));
+    }
+
+    [Fact]
+    public void A_lasting_breach_says_it_again_only_when_it_gets_worse()
+    {
+        // WP5.1: escalate, do not repeat. Six days of "still 98%" is 8,900 messages that all say the same
+        // thing, and a channel like that is filtered within a day.
+        var start = new DateTime(2026, 8, 19, 0, 0, 0, DateTimeKind.Utc);
+        var series = new List<HostSample>();
+        for (var i = 0; i < 200; i++)
+        {
+            // 91% for a long while, then climbing past the escalation step.
+            var cpu = i < 120 ? 91.0 : 99.0;
+            series.Add(new HostSample(start.AddMinutes(i), "creep", "Creep", cpu, 24.0, 1e9, 4e9, CoreCount: 2));
+        }
+
+        var findings = Replay(series).Where(f => f.Kind == "host_cpu_high").ToList();
+
+        Assert.Equal(2, findings.Count);
+        Assert.Equal(FindingKind.Raised, findings[0].What);
+        Assert.Equal(FindingKind.Escalated, findings[1].What);
+        Assert.Contains("Getting worse", findings[1].Summary);
+    }
+
+    [Fact]
+    public void An_alert_carries_how_long_it_has_been_going()
+    {
+        // WP5.3. "98%" is a different problem at two minutes and at six days, and an alert that cannot be
+        // triaged is one that gets triaged last.
+        var raised = Replay(BurgCloudIncidentSeries.Build())
+            .First(f => f.Kind == "host_cpu_high" && f.What == FindingKind.Raised);
+
+        Assert.Equal(TimeSpan.FromMinutes(10), raised.OpenFor);
+        Assert.Contains("for 10 minutes", raised.Summary);
+        Assert.Equal(90, raised.Threshold);
+    }
+
+    [Fact]
+    public void An_open_finding_that_never_closes_is_visible_as_such()
+    {
+        // WP5.4: if this list only ever grows, the closing path is broken — and a monitor whose alerts never
+        // close stops being read long before anyone works out why.
+        var evaluator = new HostLoadEvaluator();
+        foreach (var sample in BurgCloudIncidentSeries.Build(
+                     BurgCloudIncidentSeries.IncidentStart, BurgCloudIncidentSeries.IncidentStart.AddDays(3)))
+            evaluator.Evaluate(sample);
+
+        var open = evaluator.OpenFindings();
+
+        Assert.Contains(open, f => f.Kind == "host_cpu_high");
+        var oldest = open.First();
+        Assert.True(oldest.SinceUtc < BurgCloudIncidentSeries.IncidentStart.AddMinutes(15));
+    }
+
+    [Fact]
+    public void An_all_clear_never_arrives_under_the_alarms_own_name()
+    {
+        // Every channel, filter rule and severity mapping keys off the event type. A closing message labelled
+        // host_cpu_high would be rendered, coloured and escalated as a fresh alarm — the operator would read
+        // "server back to 9%" in red, next to a warning icon, and trust the next one less.
+        var findings = Replay(Spike(highMinutes: 30)).Where(f => f.Kind == "host_cpu_high").ToList();
+
+        var raised = findings.First(f => f.What == FindingKind.Raised);
+        var cleared = findings.First(f => f.What == FindingKind.Cleared);
+
+        Assert.Equal("host_cpu_high", raised.EventType);
+        Assert.Equal("Warning", raised.Severity);
+
+        Assert.Equal("host_cpu_high_recovered", cleared.EventType);
+        Assert.Equal("Info", cleared.Severity);
+    }
+
+    [Fact]
+    public void A_closed_finding_leaves_the_open_list()
+    {
+        var evaluator = new HostLoadEvaluator();
+        foreach (var sample in Spike(highMinutes: 30))
+            evaluator.Evaluate(sample);
+
+        Assert.Empty(evaluator.OpenFindings());
+    }
+
     // --- WP2: load no container explains -----------------------------------------------------------------
 
     [Fact]
@@ -213,6 +380,10 @@ public class HostLoadReplayTests
 
         var findings = Replay(series).Where(f => f.Kind == "host_cpu_high").ToList();
 
-        Assert.Equal(2, findings.Count);
+        // Raised, closed when it recovered, raised again — the recovery is now announced too (WP5.2), so the
+        // sequence is three statements rather than two silences and two alerts.
+        Assert.Equal(
+            new[] { FindingKind.Raised, FindingKind.Cleared, FindingKind.Raised },
+            findings.Select(f => f.What));
     }
 }

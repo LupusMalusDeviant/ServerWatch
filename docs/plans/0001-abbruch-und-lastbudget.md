@@ -81,7 +81,9 @@ Der Plan hat zwei Hälften, die in dieser Reihenfolge laufen müssen: **echter A
 >
 > ⚠️ **Korrektur zu diesem Block (nachgetragen bei WP6.3):** Der Satz oben, das Budget sitze am Punkt, „durch den jeder Docker-Aufruf läuft", **war falsch**. Beim Bau des Architekturtests kam heraus: von 24 Aufrufstellen in `Services/Docker/Operations/` gingen nur **3** über `ExecuteAsync`; 21 holten sich direkt über `GetClient` einen nackten Client — **darunter der Log-Abruf aus dem Vorfall selbst**. Das Budget sah vollständig aus und deckte fast nichts ab. Behebung und verbleibende Liste siehe WP6.3.
 >
-> **Offen aus WP3:** WP3.2 (Single-Flight je Server/Container/Operation). Nach WP1/WP2 kann sich der Log-Monitor nicht mehr selbst überlappen — der Hosted-Loop ist sequenziell — sodass Single-Flight jetzt Tiefenstaffelung gegen gleichzeitige UI- und Loop-Zugriffe ist, nicht mehr die Behebung des Vorfalls. Kommt mit WP4, wo der Circuit Breaker ohnehin an derselben Stelle ansetzt.
+> 🟢 **WP3.2 erledigt** — Single-Flight liegt in `ServerBudget.RunAsync` (Parameter `singleFlightKey`, greift nur im Hintergrund-Lauf: für einen Loop ist ein verworfener Aufruf ein gesparter, für einen Menschen wäre er eine hängende Oberfläche).
+>
+> **Offen aus SP-1:** Die Abfrage sitzt an den vier Stellen, die `ExecuteGuardedAsync` nutzen — **20 der 24 Docker-Aufrufstellen umgehen das Budget weiterhin** (`DockerBudgetCoverageTests` hält den Stand fest, damit er nicht unbemerkt wächst). Und der Feldnachweis über 48 h auf zwei realen Servern steht aus; er braucht einen Deploy.
 >
 > ⚠️ **Beobachtung, nicht wegerklärt:** In einem von fünf vollen Läufen fiel `BackupServiceTests.Validate_accepts_an_equal_or_older_schema` einmalig aus. In Isolation und in vier Folgeläufen grün; kein Bezug zu dieser Änderung erkennbar (kein Docker-Pfad). Als möglicher Flake festgehalten, nicht als behoben.
 >

@@ -130,6 +130,35 @@ Dieser Plan hat eine Besonderheit: **Der Prüfstand existiert bereits.** Die Met
 
 **Abnahme:** Ein 5-Minuten-Build-Peak erzeugt keine Meldung; ein 30-Minuten-Dauerzustand erzeugt genau eine, die beim Ende geschlossen wird.
 
+> 🟢 **WP5 erledigt (2026-08-27).** Die Abnahme ist wörtlich als Test hinterlegt: fünf Minuten erzeugen
+> nichts, dreißig Minuten erzeugen genau eine Meldung und genau eine Entwarnung.
+>
+> **Das war eine Lücke in dem, was Stunden vorher ausgeliefert wurde.** WP1/WP2 meldeten den Alarm und dann
+> nie sein Ende — ein Server, der von 98 % auf 9 % zurückging, erzeugte Schweigen. Wer über das Feuer
+> informiert wird und nie über das Löschen, liest den nächsten Alarm als „wahrscheinlich noch der alte".
+>
+> **Hysterese, nicht Politur.** Entwarnt wird erst 5 Punkte unter der Schwelle und erst nach 5 Minuten
+> darunter. Ohne die Marge erzeugt ein Host, der bei 87 % steht, eine Entwarnung, obwohl die Maschine fast
+> gesättigt ist; ohne die Dauer flattert einer, der die Schwelle streift. Beides endet damit, dass der Kanal
+> stummgeschaltet wird.
+>
+> **Eskaliert statt wiederholt** (WP5.1): eine offene Meldung wird nur erneut ausgesprochen, wenn es
+> *messbar schlimmer* wird — Schrittweite 5 Punkte, nicht 10, weil CPU bei 100 gedeckelt ist und ab Schwelle
+> 90 ein Zehnerschritt praktisch unerreichbar wäre. 91 % auf 99 % ist eine echte Verschärfung.
+>
+> **Die Entwarnung trägt einen eigenen Ereignistyp** (`host_cpu_high_recovered`, Severity `Info`). Jeder
+> Kanal, jede Filterregel und jede Farbzuordnung hängt an diesem String; unter dem Namen des Alarms
+> ausgeliefert würde „Server wieder bei 9 %" rot und mit Warnsymbol erscheinen.
+>
+> **WP5.4:** `whiskers_host_findings_open` und `whiskers_host_finding_oldest_age_seconds` auf `/metrics`.
+> Interessant ist nicht der Wert, sondern seine Form über die Zeit — eine Zahl, die nur wächst, heißt, dass
+> der Schließpfad kaputt ist, nicht dass die Probleme geduldig sind.
+>
+> ⚠️ **Ein Test hat wieder nicht gemessen, was er behauptete.** Der erste Hysterese-Test wechselte im
+> Minutentakt über die Schwelle — schneller als das Bestätigungsfenster, also konnte mit *und ohne* Marge
+> keine Entwarnung entstehen. Er war gegen einen Build ohne Hysterese grün. Ersetzt durch den Fall, um den es
+> wirklich geht: ein Host, der von 98 % auf 87 % fällt und dort bleibt. Gegenprobe jetzt rot.
+
 ### WP-MCP: Agenten-Oberfläche
 
 **Zweck:** Das Paket ist erst fertig, wenn der Agent es benutzen kann — siehe [PRD-0013](../prd/0013-mcp-und-agentenoberflaeche.md).

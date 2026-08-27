@@ -20,6 +20,14 @@ All notable changes to Whiskers are documented here. The format follows
   the request. This affected the pre-existing container metrics too, not only the new self-metrics.
 
 ### Added
+- **Host alerts close themselves.** A server that goes back to normal now says so, with its own event type
+  and informational severity — an all-clear delivered under the alarm's own name would be rendered red, next
+  to a warning icon, and read as a fresh incident. The all-clear waits until the value is five points below
+  the threshold and has stayed there five minutes: without that margin a host sitting at 87% would be
+  declared recovered while still nearly saturated, and one grazing the threshold would flap until somebody
+  muted the channel. An open finding is escalated only when it gets materially worse, never repeated. The
+  count of unclosed findings and the age of the oldest are on `/metrics` — a number that only ever climbs
+  means the closing path is broken, not that the problems are patient.
 - **A server pinned at 98% CPU is now reported — the gap the 2026-08-26 incident fell through.** Alerts were
   evaluated per container plus one server-level rule for disk, and `dockerd` runs in no container: Whiskers
   recorded roughly 8,900 measurements of that host over six days, practically every one above 98%, and judged

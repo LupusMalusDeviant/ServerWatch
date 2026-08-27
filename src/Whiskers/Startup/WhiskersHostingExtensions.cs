@@ -153,6 +153,9 @@ public static class WhiskersHostingExtensions
         builder.Services.AddSingleton<Whiskers.Services.Observability.SelfMetrics.ISelfMetrics, Whiskers.Services.Observability.SelfMetrics.SelfMetrics>();
         // Watches the watchers: reports the ABSENCE of cycles. Must never be suppressible by the
         // mechanisms it supervises (Plan-0002 WP5.3).
+        // Host-level rules (Plan-0004). A singleton because the breach state — what is open, since when,
+        // what was already said — is the whole point; a per-cycle instance would re-raise every alert.
+        builder.Services.AddSingleton<Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator>();
         builder.Services.AddSingleton<Whiskers.Services.Observability.ILoopSuspensionService, Whiskers.Services.Observability.LoopSuspensionService>();
         // Access-path detection for the log scan (Plan-0007 WP1). The self-host set is resolved once at
         // registration: which servers can hold OUR container is a property of the fleet configuration.

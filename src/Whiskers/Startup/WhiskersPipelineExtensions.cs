@@ -500,6 +500,23 @@ public static class WhiskersPipelineExtensions
             sb.AppendLine($"whiskers_self_series_total {seriesCount}");
         }
 
+        var hostLoad = services.GetService<Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator>();
+        if (hostLoad is not null)
+        {
+            // Plan-0004 WP5.4. The value is less interesting than its shape over time: an open-findings count
+            // that only ever climbs means the closing path is broken, and a monitor whose alerts never close
+            // stops being read long before anybody works out why. The age of the oldest one is the giveaway.
+            var open = hostLoad.OpenFindings();
+            sb.AppendLine("# HELP whiskers_host_findings_open Host findings raised and not yet closed. A count that only ever grows means the all-clear path is broken, not that the problems are patient.");
+            sb.AppendLine("# TYPE whiskers_host_findings_open gauge");
+            foreach (var group in open.GroupBy(f => (f.ServerId, f.Kind)))
+                sb.AppendLine($"whiskers_host_findings_open{{server=\"{Esc(group.Key.ServerId)}\",kind=\"{Esc(group.Key.Kind)}\"}} {group.Count()}");
+
+            sb.AppendLine("# HELP whiskers_host_finding_oldest_age_seconds Age of the oldest unclosed host finding. Past a week it is evidence about the closing path, not about the server.");
+            sb.AppendLine("# TYPE whiskers_host_finding_oldest_age_seconds gauge");
+            sb.AppendLine($"whiskers_host_finding_oldest_age_seconds {(open.Count > 0 ? (now - open[0].SinceUtc).TotalSeconds : 0):F0}");
+        }
+
         if (exclusions is not null)
         {
             // Plan-0007 WP2.2. The number to watch is not its value but its MOVEMENT: exclusions that appear
