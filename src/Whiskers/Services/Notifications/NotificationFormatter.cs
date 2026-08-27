@@ -27,6 +27,8 @@ public static class NotificationFormatter
         "server_recovered" => ("Server reachable again", "Info"),
         // Whiskers throttling ITSELF. Never silent: a self-imposed pause that nobody is told about
         // turns "quiet" into "blind", and hides the next incident behind the fix for the last one.
+        "host_api_slow" => ("Docker is answering much slower than usual", "Warning"),
+        "host_api_slow_recovered" => ("Docker is answering at its usual speed again", "Info"),
         "host_cpu_high" => ("Server CPU high for a sustained period", "Warning"),
         "host_cpu_high_recovered" => ("Server CPU back to normal", "Info"),
         "host_memory_high_recovered" => ("Server memory back to normal", "Info"),
@@ -68,7 +70,7 @@ public static class NotificationFormatter
         if (e.EventType == "cve_finding") return "cves";
         if (e.EventType is "server_unreachable" or "server_recovered"
                 or "server_throttled" or "server_throttling_ended") return "servers";
-        if (e.EventType.StartsWith("host_cpu_") || e.EventType.StartsWith("host_memory_")) return "servers";
+        if (e.EventType.StartsWith("host_")) return "servers";
         if (e.EventType == "log_rotation_missing") return "servers";
         if (e.EventType is "loops_paused" or "loops_resumed") return "servers";
         if (e.EventType is "monitoring_stalled" or "monitoring_resumed") return "servers";

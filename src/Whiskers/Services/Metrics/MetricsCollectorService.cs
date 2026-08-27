@@ -23,6 +23,7 @@ public class MetricsCollectorService : BackgroundService
     // Injected rather than owned: /metrics reads its open-findings list (Plan-0004 WP5.4), and a private
     // field would have made the "is the closing path working?" number the one number nobody can see.
     private readonly Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator _hostLoad;
+    private readonly Whiskers.Services.Metrics.HostLoad.ApiLatencyEvaluator _apiLatency;
     private DateTime _lastPrune;                 // OPT-2: prune at most hourly, not every 30s cycle
     private const int MaxStatsConcurrency = 8;   // OPT-11.2: bound the per-container stats fan-out
 
@@ -30,6 +31,7 @@ public class MetricsCollectorService : BackgroundService
         IServiceProvider services,
         IOptionsMonitor<MetricAlertSettings> alertSettings,
         Whiskers.Services.Metrics.HostLoad.HostLoadEvaluator hostLoad,
+        Whiskers.Services.Metrics.HostLoad.ApiLatencyEvaluator apiLatency,
         IOptionsMonitor<MetricsSettings> metricsSettings,
         ILogger<MetricsCollectorService> logger,
         Whiskers.Services.Observability.SelfMetrics.ISelfMetrics selfMetrics)
@@ -37,6 +39,7 @@ public class MetricsCollectorService : BackgroundService
         _services = services;
         _alertSettings = alertSettings;
         _hostLoad = hostLoad;
+        _apiLatency = apiLatency;
         _metricsSettings = metricsSettings;
         _logger = logger;
         _selfMetrics = selfMetrics;
@@ -209,7 +212,18 @@ public class MetricsCollectorService : BackgroundService
                             info.MemoryUsedBytes, info.MemoryTotalBytes,
                             info.CpuCount);
 
-                        foreach (var finding in _hostLoad.Evaluate(sample))
+                        var findings = _hostLoad.Evaluate(sample).ToList();
+
+                        // Plan-0004 WP4: how fast the daemon itself is answering. A separate signal from host
+                        // CPU on purpose — it sees an overloaded daemon whoever is overloading it, including
+                        // the case where the load is not on this host at all but on the link to it.
+                        if (_selfMetrics.ApiLatencies().TryGetValue(serverId, out var latencies))
+                        {
+                            var slow = _apiLatency.Evaluate(now, serverId, info.ServerName, latencies);
+                            if (slow is not null) findings.Add(slow);
+                        }
+
+                        foreach (var finding in findings)
                         {
                             _logger.Log(
                                 finding.What == Whiskers.Services.Metrics.HostLoad.FindingKind.Cleared

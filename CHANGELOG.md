@@ -20,6 +20,14 @@ All notable changes to Whiskers are documented here. The format follows
   the request. This affected the pre-existing container metrics too, not only the new self-metrics.
 
 ### Added
+- **A Docker daemon that has become slow is now a signal of its own.** Whiskers makes hundreds of API calls a
+  minute and never timed one of them: an overloaded daemon was visible only as things "feeling slow". The
+  fleet listing — one call per server per health cycle — is now timed, and a recent median three times the
+  host's own baseline raises an alert. Deliberately a ratio, not a millisecond threshold: a Pi over a tunnel
+  and a local socket differ by an order of magnitude while both are healthy. Only successful calls are
+  measured, because a call cut off at its timeout says "at least 8 seconds" and would peg the median the
+  moment a host went fully silent — a case the circuit breaker already covers far better. The rule detects
+  the *transition*; once a host's new normal is slow, the sustained state is the host-CPU rule's job.
 - **Host alerts close themselves.** A server that goes back to normal now says so, with its own event type
   and informational severity — an all-clear delivered under the alarm's own name would be rendered red, next
   to a warning icon, and read as a fresh incident. The all-clear waits until the value is five points below

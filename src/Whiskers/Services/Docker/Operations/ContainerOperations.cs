@@ -17,6 +17,7 @@ internal sealed class ContainerOperations
     private readonly IServerConfigService _serverConfigService;
     private readonly ILogger<DockerService> _logger;
     private readonly MemoryCache _statsCache;
+    private readonly Whiskers.Services.Observability.SelfMetrics.ISelfMetrics _selfMetrics;
     private static readonly TimeSpan StatsCacheDuration = TimeSpan.FromSeconds(3);
     // Reused across every stats deserialize instead of allocating a fresh options object per call.
     private static readonly System.Text.Json.JsonSerializerOptions StatsJsonOptions = new()
@@ -29,8 +30,10 @@ internal sealed class ContainerOperations
         IDockerConnectionManager connectionManager,
         IServerConfigService serverConfigService,
         ILogger<DockerService> logger,
-        MemoryCache statsCache)
+        MemoryCache statsCache,
+        Whiskers.Services.Observability.SelfMetrics.ISelfMetrics selfMetrics)
     {
+        _selfMetrics = selfMetrics;
         _connectionManager = connectionManager;
         _serverConfigService = serverConfigService;
         _logger = logger;
@@ -122,7 +125,15 @@ internal sealed class ContainerOperations
                 using var timeout = new CancellationTokenSource(perServerTimeout);
                 try
                 {
-                    return new ServerListing(server, await ListContainersAsync(all, server.Id, timeout.Token), null);
+                    // The API-latency probe (Plan-0004 WP4). This call happens once per server per health
+                    // cycle and is the most regular Docker request Whiskers makes, which makes it the natural
+                    // place to measure how fast the daemon is answering. Timed here rather than at every call
+                    // site: 20 of the 24 sites do not pass through a shared path at all, so a probe placed
+                    // there would measure whatever happened to be instrumented rather than the host.
+                    var started = System.Diagnostics.Stopwatch.GetTimestamp();
+                    var listing = new ServerListing(server, await ListContainersAsync(all, server.Id, timeout.Token), null);
+                    _selfMetrics.RecordApiCall(server.Id, System.Diagnostics.Stopwatch.GetElapsedTime(started));
+                    return listing;
                 }
                 catch (OperationCanceledException) when (timeout.IsCancellationRequested)
                 {

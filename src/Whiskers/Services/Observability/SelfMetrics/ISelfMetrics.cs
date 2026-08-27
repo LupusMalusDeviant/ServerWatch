@@ -63,6 +63,19 @@ public interface ISelfMetrics
 
     IReadOnlyList<LoopHealth> Loops();
 
+    /// <summary>Records how long one Docker API call to this server took (Plan-0004 WP4).
+    ///
+    /// <para>Only successful calls. A call that was cancelled at its timeout says "at least 8 seconds", not
+    /// "8 seconds", and feeding the timeout value in as a measurement would peg the median at the timeout the
+    /// moment a host goes fully silent — which the circuit breaker and the supervisory rule already cover far
+    /// better. What this series is for is the case in between: a daemon still answering, but at 5 seconds
+    /// instead of 100 milliseconds. That is the fingerprint of overload, and nothing else in Whiskers sees
+    /// it.</para></summary>
+    void RecordApiCall(string serverId, TimeSpan duration);
+
+    /// <summary>Recent call durations per server, oldest first. Bounded; see the implementation.</summary>
+    IReadOnlyDictionary<string, IReadOnlyList<TimeSpan>> ApiLatencies();
+
     /// <summary>Named counters, as name → server → value.</summary>
     IReadOnlyDictionary<string, IReadOnlyDictionary<string, long>> Counters();
 }

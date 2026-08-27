@@ -31,6 +31,10 @@ public sealed class SelfMetrics : ISelfMetrics
     private readonly ConcurrentDictionary<string, LoopState> _loops = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, long>> _counters = new(StringComparer.Ordinal);
 
+    // A queue per server rather than a lock-free structure: a median needs the samples themselves, and the
+    // lock is held for a handful of instructions on a path that runs once per server per cycle.
+    private readonly ConcurrentDictionary<string, Queue<TimeSpan>> _latencies = new(StringComparer.Ordinal);
+
     private static string Key(string loop, string serverId) => $"{loop}|{serverId}";
 
     public void RecordCycle(string loop, string serverId, TimeSpan duration, bool success, TimeSpan? interval = null)
@@ -70,6 +74,27 @@ public sealed class SelfMetrics : ISelfMetrics
         if (s.LastSuccess is null && lastSuccess is not null) s.LastSuccess = lastSuccess;
         if (s.ExpectedInterval is null && interval is not null) s.ExpectedInterval = interval;
     }
+
+    /// <summary>How many recent call durations are kept per server. At one probe per health cycle (30 s)
+    /// this is about an hour — long enough for a baseline that a five-minute deploy cannot drag with it, short
+    /// enough that a host which genuinely got slower is not compared against yesterday forever.</summary>
+    private const int LatencyWindow = 120;
+
+    public void RecordApiCall(string serverId, TimeSpan duration)
+    {
+        var window = _latencies.GetOrAdd(serverId, _ => new Queue<TimeSpan>(LatencyWindow));
+        lock (window)
+        {
+            window.Enqueue(duration);
+            while (window.Count > LatencyWindow) window.Dequeue();
+        }
+    }
+
+    public IReadOnlyDictionary<string, IReadOnlyList<TimeSpan>> ApiLatencies() =>
+        _latencies.ToDictionary(
+            kv => kv.Key,
+            kv => { lock (kv.Value) { return (IReadOnlyList<TimeSpan>)kv.Value.ToList(); } },
+            StringComparer.Ordinal);
 
     public IReadOnlyList<LoopHealth> Loops() =>
         _loops

@@ -99,49 +99,47 @@ public sealed class HostLoadThresholds
 /// </summary>
 public sealed class HostLoadEvaluator
 {
-    private sealed class Breach
-    {
-        public DateTime? Since;              // when the value first went over
-        public DateTime? Reported;           // when it was last said out loud (null = never)
-        public double ReportedValue;         // what was said, so escalation can be measured against it
-        public DateTime? BelowSince;         // when it came back under the clear line
-        public double Peak;
-    }
-
-    private readonly Dictionary<string, Breach> _breaches = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _serverNames = new(StringComparer.Ordinal);
+    private readonly BreachTracker _tracker;
     private readonly HostLoadThresholds _thresholds;
 
     public HostLoadEvaluator(HostLoadThresholds? thresholds = null)
-        => _thresholds = thresholds ?? new HostLoadThresholds();
+    {
+        _thresholds = thresholds ?? new HostLoadThresholds();
+        _tracker = new BreachTracker(_thresholds);
+    }
 
     /// <summary>Judges one sample and returns whatever became reportable at that moment. Usually empty.</summary>
     public IReadOnlyList<HostLoadFinding> Evaluate(HostSample sample)
     {
-        _serverNames[sample.ServerId] = sample.ServerName;
         var findings = new List<HostLoadFinding>();
 
-        Consider(findings, sample, "host_cpu_high", sample.HostCpuPercent, _thresholds.CpuPercent,
-            (v, open) => $"{sample.ServerName} has been at {v:F0}% CPU for {Describe(open)} " +
+        Add(findings, _tracker.Consider(
+            sample.AtUtc, sample.ServerId, sample.ServerName, "host_cpu_high",
+            sample.HostCpuPercent, _thresholds.CpuPercent,
+            (v, open) => $"{sample.ServerName} has been at {v:F0}% CPU for {BreachTracker.Describe(open)} " +
                          $"(threshold {_thresholds.CpuPercent:F0}%). This is the whole machine, not one container.",
-            v => $"{sample.ServerName} is back to {v:F0}% CPU.");
+            v => $"{sample.ServerName} is back to {v:F0}% CPU."));
 
-        Consider(findings, sample, "host_memory_high", sample.MemoryPercent, _thresholds.MemoryPercent,
-            (v, open) => $"{sample.ServerName} has been at {v:F0}% memory for {Describe(open)} " +
+        Add(findings, _tracker.Consider(
+            sample.AtUtc, sample.ServerId, sample.ServerName, "host_memory_high",
+            sample.MemoryPercent, _thresholds.MemoryPercent,
+            (v, open) => $"{sample.ServerName} has been at {v:F0}% memory for {BreachTracker.Describe(open)} " +
                          $"(threshold {_thresholds.MemoryPercent:F0}%).",
-            v => $"{sample.ServerName} is back to {v:F0}% memory.");
+            v => $"{sample.ServerName} is back to {v:F0}% memory."));
 
         // The specific one. It names the class of cause rather than only the symptom, which is what turns
         // "the server is busy" into "something outside the containers is busy" — the exact fact that took six
         // days to establish by hand.
-        Consider(findings, sample, "host_cpu_unexplained", sample.UnexplainedCpuPercent, _thresholds.UnexplainedCpuPercent,
+        Add(findings, _tracker.Consider(
+            sample.AtUtc, sample.ServerId, sample.ServerName, "host_cpu_unexplained",
+            sample.UnexplainedCpuPercent, _thresholds.UnexplainedCpuPercent,
             (v, open) => $"{sample.ServerName} is using {sample.HostCpuPercent:F0}% CPU while its containers together " +
                          $"account for only {sample.ContainerCpuPercentOfMachine:F0}% — {v:F0} points unexplained, " +
-                         $"for {Describe(open)}. A host process is the likely cause; dockerd, a backup job and a " +
-                         "runaway service all look like this. Short-lived containers are missing from the sum, so " +
-                         "treat this as a strong hint rather than proof.",
+                         $"for {BreachTracker.Describe(open)}. A host process is the likely cause; dockerd, a backup " +
+                         "job and a runaway service all look like this. Short-lived containers are missing from the " +
+                         "sum, so treat this as a strong hint rather than proof.",
             v => $"{sample.ServerName}: the unexplained load is down to {v:F0} points — its containers account " +
-                 "for what the host is doing again.");
+                 "for what the host is doing again."));
 
         return findings;
     }
@@ -149,108 +147,10 @@ public sealed class HostLoadEvaluator
     /// <summary>Findings that were raised and never closed, oldest first. Drives the WP5.4 metric: if the
     /// count of stale entries only ever climbs, the closing path is broken — and a monitor whose alerts never
     /// close stops being read long before anyone works out why.</summary>
-    public IReadOnlyList<OpenFinding> OpenFindings()
-        => _breaches
-            .Where(kv => kv.Value.Reported is not null)
-            .Select(kv =>
-            {
-                var parts = kv.Key.Split('|', 2);
-                return new OpenFinding(
-                    parts[0], _serverNames.GetValueOrDefault(parts[0], parts[0]),
-                    parts.Length > 1 ? parts[1] : string.Empty,
-                    kv.Value.Since ?? kv.Value.Reported!.Value,
-                    kv.Value.Peak);
-            })
-            .OrderBy(f => f.SinceUtc)
-            .ToList();
+    public IReadOnlyList<OpenFinding> OpenFindings() => _tracker.OpenFindings();
 
-    private void Consider(
-        List<HostLoadFinding> findings, HostSample sample, string kind, double value, double threshold,
-        Func<double, TimeSpan, string> describeBreach,
-        Func<double, string> describeRecovery)
+    private static void Add(List<HostLoadFinding> findings, HostLoadFinding? finding)
     {
-        var key = $"{sample.ServerId}|{kind}";
-        var breach = _breaches.TryGetValue(key, out var existing) ? existing : _breaches[key] = new Breach();
-
-        if (value < threshold)
-        {
-            HandleBelowThreshold(findings, sample, kind, value, threshold, breach, describeRecovery);
-            return;
-        }
-
-        // Over the line again — any recovery in progress is cancelled.
-        breach.BelowSince = null;
-        breach.Since ??= sample.AtUtc;
-        breach.Peak = Math.Max(breach.Peak, value);
-
-        var openFor = sample.AtUtc - breach.Since.Value;
-        if (openFor < _thresholds.SustainedFor) return;
-
-        if (breach.Reported is null)
-        {
-            breach.Reported = sample.AtUtc;
-            breach.ReportedValue = value;
-            findings.Add(new HostLoadFinding(
-                sample.AtUtc, sample.ServerId, sample.ServerName, kind, FindingKind.Raised,
-                describeBreach(value, openFor), value, threshold, openFor));
-            return;
-        }
-
-        // Already open. It is only worth saying again if it got materially worse — otherwise the operator
-        // learns nothing they do not already know, and learns to skip the next one.
-        if (value - breach.ReportedValue < _thresholds.EscalationStep) return;
-
-        breach.Reported = sample.AtUtc;
-        breach.ReportedValue = value;
-        findings.Add(new HostLoadFinding(
-            sample.AtUtc, sample.ServerId, sample.ServerName, kind, FindingKind.Escalated,
-            "Getting worse — " + describeBreach(value, openFor), value, threshold, openFor));
+        if (finding is not null) findings.Add(finding);
     }
-
-    private void HandleBelowThreshold(
-        List<HostLoadFinding> findings, HostSample sample, string kind, double value, double threshold,
-        Breach breach, Func<double, string> describeRecovery)
-    {
-        // Not yet clearly below. Between the threshold and the clear line nothing is decided: the breach
-        // stays open and no all-clear is given, which is what stops a server hovering at the threshold from
-        // flapping between alert and all-clear until somebody mutes the channel.
-        if (value > threshold - _thresholds.ClearMargin)
-        {
-            breach.BelowSince = null;
-            return;
-        }
-
-        breach.BelowSince ??= sample.AtUtc;
-        if (sample.AtUtc - breach.BelowSince < _thresholds.ClearedFor) return;
-
-        var wasReported = breach.Reported;
-        var openedAt = breach.Since;
-        // The breach ended when the value dropped, not when we finished confirming it. Reporting the
-        // confirmation window as part of the outage would overstate every incident by five minutes — small,
-        // but it is the kind of drift that makes people stop trusting the numbers in a post-mortem.
-        var endedAt = breach.BelowSince ?? sample.AtUtc;
-
-        breach.Since = null;
-        breach.Reported = null;
-        breach.BelowSince = null;
-        breach.Peak = 0;
-
-        // An all-clear only for something that was actually announced. A breach that resolved before it was
-        // ever reported needs no closing message — sending one would mean the first thing the operator hears
-        // about a problem is that it is over.
-        if (wasReported is null) return;
-
-        var openFor = openedAt is { } start ? endedAt - start : TimeSpan.Zero;
-        findings.Add(new HostLoadFinding(
-            sample.AtUtc, sample.ServerId, sample.ServerName, kind, FindingKind.Cleared,
-            describeRecovery(value) + $" It had been over the threshold for {Describe(openFor)}.",
-            value, threshold, openFor));
-    }
-
-    private static string Describe(TimeSpan span) => span switch
-    {
-        { TotalMinutes: < 90 } => $"{span.TotalMinutes:F0} minutes",
-        { TotalHours: < 48 } => $"{span.TotalHours:F0} hours",
-        _ => $"{span.TotalDays:F0} days"
-    };
 }

@@ -118,6 +118,43 @@ Dieser Plan hat eine Besonderheit: **Der Prüfstand existiert bereits.** Die Met
 
 **Abnahme:** Ein künstlich verlangsamter Docker-Proxy erzeugt binnen zwei Auswertungen eine Meldung.
 
+> 🟢 **WP4 erledigt (2026-08-27).** Die Antwortzeit wurde bisher **gar nicht gemessen** — SP-3 erfasst
+> Zyklusdauern, nicht die Dauer einzelner Docker-Aufrufe. Die Sonde sitzt jetzt an der Flotten-Auflistung: ein
+> Aufruf je Server und Gesundheitszyklus, der regelmäßigste Docker-Request im System. Bewusst dort statt an
+> jeder Aufrufstelle — 20 der 24 Stellen laufen über keinen gemeinsamen Pfad, eine Messung dort hätte
+> gemessen, was zufällig instrumentiert ist, nicht den Host.
+>
+> **Nur erfolgreiche Aufrufe.** Ein Aufruf, der am Timeout abgebrochen wurde, sagt „mindestens 8 Sekunden",
+> nicht „8 Sekunden"; ihn als Messwert zu führen würde den Median auf den Timeout festnageln, sobald ein Host
+> ganz verstummt — und diesen Fall decken Circuit Breaker und Aufsichtsregel weit besser ab. Wofür diese Serie
+> da ist, ist der Zustand dazwischen: ein Daemon, der noch antwortet, aber in 5 Sekunden statt in 100
+> Millisekunden.
+>
+> **Verhältnis statt fester Millisekundenschwelle.** Ein Raspberry Pi über einen Tunnel und ein lokaler Socket
+> unterscheiden sich um eine Größenordnung, während beide kerngesund sind; jede feste Zahl wäre für einen von
+> beiden falsch.
+>
+> **Die Verstoßverwaltung ist herausgezogen** (`BreachTracker`) statt kopiert. Hysterese, Eskalation und die
+> Dauermessung sind klein, aber leicht subtil falsch — zwei davon waren es gestern schon —, und eine zweite
+> Umsetzung wäre eine zweite Gelegenheit gewesen, sie *anders* falsch zu machen, an einer Stelle, an der es
+> niemand vergleicht.
+>
+> ⚠️ **Zwei Fehler durch Wiederverwenden prozentskalierter Werte auf einer Verhältniszahl:**
+>
+> 1. **Die Bodenschwelle lag auch auf der Grundlinie.** 250 ms als Untergrenze verwarf jede Grundlinie unter
+>    250 ms — also ausgerechnet die 100 ms, die der Vorfallsbericht als gesunden Wert nennt. Die Regel schwieg
+>    zu genau dem Fall, für den sie gebaut wurde. Die Schwelle gilt jetzt nur für den *aktuellen* Median.
+> 2. **Die Hysterese kam aus der Prozentwelt.** Eine Entwarnungsmarge von 5 Punkten unter einer Schwelle von 3
+>    bedeutet, dass entwarnt wird, sobald das Verhältnis unter **minus zwei** fällt — nie. Die Meldung wäre
+>    aufgemacht und nie geschlossen worden, also genau das, wofür WP5.4 die Kennzahl „offene Meldungen"
+>    eingeführt hat. Eigene Skala: Entwarnung unter 2×, Eskalation ab 3 Punkten Verhältnis.
+>
+> **Was diese Regel bewusst nicht kann:** Sie erkennt den **Übergang**, nicht den Zustand. Ist das ganze
+> Fenster langsam, ist Langsamkeit die neue Normalität dieses Hosts und die Regel verstummt. Das ist keine
+> offene Lücke, sondern die Arbeitsteilung: den Dauerzustand sehen die Host-CPU-Regel und die Aufsichtsregel.
+>
+> **Offen:** die Abnahme mit einem künstlich verlangsamten Proxy auf einem echten Host.
+
 ### WP5: Meldungsqualität und Entwarnung
 
 **Zweck:** Verhindern, dass die neuen Signale abtrainiert werden.

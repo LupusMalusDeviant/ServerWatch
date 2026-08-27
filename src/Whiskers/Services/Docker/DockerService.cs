@@ -27,14 +27,18 @@ public class DockerService : IDockerService
         ILogger<DockerService> logger,
         // F8: optional last param (test seams unchanged) — registry credentials for authenticated
         // pulls of UI-managed private registries.
-        Whiskers.Services.Registries.IRegistryConfigService? registryConfig = null)
+        Whiskers.Services.Registries.IRegistryConfigService? registryConfig = null,
+        // Plan-0004 WP4: the API-latency probe. Optional and last, so the existing test seams that build
+        // this facade by hand stay untouched; a null just means nothing is measured.
+        Whiskers.Services.Observability.SelfMetrics.ISelfMetrics? selfMetrics = null)
     {
         // One shared cache across the collaborators (stats, host-shell sweep/image markers, host
         // resource usage) — same single MemoryCache instance the pre-split class used; the key
         // prefixes ("stats:", "hostshellsweep:", "hostshellimg:", "hostres:") keep entries apart.
         var statsCache = new MemoryCache(new MemoryCacheOptions());
 
-        _containers = new ContainerOperations(connectionManager, serverConfigService, logger, statsCache);
+        _containers = new ContainerOperations(connectionManager, serverConfigService, logger, statsCache,
+            selfMetrics ?? new Whiskers.Services.Observability.SelfMetrics.SelfMetrics());
         _images = new ImageOperations(connectionManager, logger, registryConfig);
         _lifecycle = new ContainerLifecycleOperations(connectionManager, _images, logger);
         _networks = new NetworkOperations(connectionManager, serverConfigService);
