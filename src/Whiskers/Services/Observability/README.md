@@ -9,6 +9,8 @@ Two separate things live here: what Whiskers **did** (governance recording, belo
 |---|---|
 | `SelfMetrics/` | Loop health per (loop, server): last success, last attempt, cycle duration, failures, and **skips with a reason**. Exported as `whiskers_self_*` on `/metrics`. See [`SelfMetrics/ISelfMetrics.cs`](SelfMetrics/ISelfMetrics.cs). |
 | `SelfMetrics/SelfMetricsRecorder.cs` | Writes those numbers to `SelfMetricSamples` once a minute, restores them on boot, and prunes them on their own retention. |
+| `SelfMetrics/SelfStatusPresenter.cs` | The judgement behind `/self-status` — stalled vs healthy vs skipped vs unjudged — using the supervisor's threshold rather than its own copy. |
+| `SelfMetrics/ActionTimeline.cs` | "What happened at 14:02?" — human actions and Whiskers' own decisions on one UTC timeline. |
 | `ScanSupervisor.cs` | Watches the watchers: raises `monitoring_stalled` when a loop has not completed a cycle for a server in three of its own intervals — whatever the cause. |
 | `ILoopSuspensionService.cs` / `LoopSuspensionService.cs` | The emergency stop: pause one server's background checks. Announced, time-bounded, fail-open, not persisted across restarts (deliberately — see the file). |
 | `SuspensionReminder.cs` | Keeps saying that a paused server is still unwatched, every 24 h, for as long as it stays paused. |

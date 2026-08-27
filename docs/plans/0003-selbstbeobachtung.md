@@ -134,7 +134,7 @@ Die wichtigste Einzelkennzahl ist nicht ein Fehlerzähler, sondern **das Alter d
 | WP6.3 Zeitreihenzahl | ✅ | `whiskers_self_series_total` |
 | WP-MCP | ✅ | `get_whiskers_self_status`, read; Test verlangt, dass eine tote Schleife **im Text allein** erkennbar ist |
 | WP4 Ansicht | ✅ | `/self-status`; Urteil in `SelfStatusPresenter` (getestet), Seite nur Darstellung |
-| WP5 Zeitachse | ⬜ offen | UI-Block |
+| WP5 Zeitachse | ✅ *als Liste, nicht als Kurvenüberlagerung* | `ActionTimeline` (getestet) + Abschnitt auf `/self-status` |
 | WP6.1 Leerlaufmessung | ⬜ offen | braucht einen laufenden Host über 30 min |
 
 ### Die Persistenz löst ein zweites, größeres Problem
@@ -163,6 +163,27 @@ niemand bemerkte. Neue Regel: Ohne je einen Erfolg wird nach **Anzahl der Gelege
 Zyklen ohne Erfolg = Stillstand), nicht nach der Frische des letzten Versuchs — und ein frisch gestarteter
 Prozess bekommt diese drei Zyklen, damit nicht jeder Neustart zum Vorfall wird. Gegenbeweis: alte Regel
 wiederhergestellt → der Test wird rot.
+
+### Zur Zeitachse (WP5): zwei bewusste Abweichungen
+
+**Sie ist eine Zeitliste, keine Überlagerung über die Metrikkurve.** Der Plan spricht von „Markierungen über
+der Kurve". Gebaut ist eine chronologische Liste mit Verweis ins Audit-Log. Die Abnahmebedingung — „ein
+manuell ausgelöster Container-Neustart erscheint auf die Sekunde genau an der richtigen Stelle" — ist damit
+erfüllt und getestet; die grafische Überlagerung ist Darstellung, kein Erkenntnisgewinn, und sie kostet
+deutlich mehr als der Rest dieses Pakets zusammen. **Falls die Kurvenüberlagerung gewünscht ist, ist das ein
+eigener Schritt.**
+
+**Ereignisse erscheinen nur in der flottenweiten Ansicht.** `NotificationEntity` hat keine `ServerId` — die
+Spalte existiert nicht. Ein Ereignis auf der Zeitachse eines einzelnen Servers zu zeigen hieße, eine Pause auf
+einem Host einem Ausschlag auf einem anderen zuzuschreiben, also genau die falsche Beziehung nahezulegen,
+gegen die WP5.2 geschrieben ist. Beim Einschränken auf einen Server fallen sie deshalb weg. **Eine
+`ServerId`-Spalte wäre eine additive Migration — das ist eine Entscheidung, keine Auslassung.**
+
+Beim Filtern kam noch eine Kleinigkeit heraus, die aber die Denkrichtung festlegt: Der erste Entwurf ließ
+`container.list` durch, weil er nach Präfix filterte. Jetzt werden **Lesevorgänge ausgeschlossen** statt
+Schreibvorgänge aufgezählt — eine Positivliste würde die nächste Art von Eingriff, die jemand hinzufügt,
+stillschweigend verschlucken, und eine Zeitachse, der genau die Aktion fehlt, die den Ausschlag verursacht
+hat, ist schlimmer als keine: Sie sieht vollständig aus.
 
 **2. `/metrics` lieferte kulturabhängige Zahlen.** Der Endpunkt liegt hinter `UseRequestLocalization` mit `de`
 als unterstützter Kultur. Ein Scraper (oder Browser) mit `Accept-Language: de` bekam `0,120` statt `0.120` —

@@ -12,6 +12,8 @@
 @inject ILogMonitorService LogMonitor
 @inject ILogScanExclusions Exclusions
 @inject IServerConfigService ServerConfig
+@inject Whiskers.Services.AuditLog.IAuditLogService AuditLog
+@inject Whiskers.Services.Notifications.IInAppNotificationStore Alerts
 @implements IDisposable
 
 @* "Is Whiskers still working?" — Plan-0003 WP4.
@@ -158,6 +160,53 @@ else
     </MudTable>
 }
 
+@* Plan-0003 WP5 — "what happened at 14:02?". Self-inflicted load is the hardest kind to attribute: the
+   curve shows the effect and nothing shows the cause. Human actions and Whiskers' own decisions belong on
+   one list, because a pause or an open circuit changes the numbers with nobody having touched the fleet.
+
+   Everything is computed in UTC and converted only here, at the point of display. A timeline with an offset
+   in it is worse than no timeline — it will confidently suggest that the thing which happened AFTER the
+   spike caused it. *@
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-6 mb-2">
+    <MudText Typo="Typo.h6">What has been happening</MudText>
+    <MudSpacer />
+    <MudText Typo="Typo.caption">last 6 hours · times shown in @_timeZoneLabel</MudText>
+</MudStack>
+
+@if (_timeline.Count == 0)
+{
+    <MudText Typo="Typo.body2">Nothing has changed on the fleet in the last six hours.</MudText>
+}
+else
+{
+    <MudTimeline TimelinePosition="TimelinePosition.Start" Class="mb-4">
+        @foreach (var entry in _timeline)
+        {
+            <MudTimelineItem Size="Size.Small"
+                             Color="@(entry.Success ? (entry.Actor == "Whiskers" ? Color.Info : Color.Default) : Color.Error)">
+                <MudText Typo="Typo.body2">
+                    <b>@Local(entry.AtUtc)</b> — @entry.Summary
+                    @if (!entry.Success)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Error" Class="d-inline"> (failed)</MudText>
+                    }
+                </MudText>
+                <MudText Typo="Typo.caption">
+                    @(entry.Actor ?? "unknown")
+                    @if (entry.ServerId is { } sid)
+                    {
+                        @($" · {ServerName(sid)}")
+                    }
+                    @if (entry.AuditId is not null)
+                    {
+                        <MudLink Href="/audit-log" Typo="Typo.caption" Class="ml-2">audit log</MudLink>
+                    }
+                </MudText>
+            </MudTimelineItem>
+        }
+    </MudTimeline>
+}
+
 <MudText Typo="Typo.caption" Class="mt-4 d-block">
     A <b>skipped</b> server is deliberately not covered by that loop — not a fault, but no findings will come
     from it either. <b>Unjudged</b> means the loop declares no cadence, so there is no basis for a verdict;
@@ -173,12 +222,19 @@ else
     private IReadOnlyList<SuspendedContainer> _suspendedContainers = Array.Empty<SuspendedContainer>();
     private IReadOnlyList<LogScanExclusion> _exclusions = Array.Empty<LogScanExclusion>();
     private IReadOnlyList<UnreadContainerRow> _notRead = Array.Empty<UnreadContainerRow>();
+    private IReadOnlyList<TimelineEntry> _timeline = Array.Empty<TimelineEntry>();
+    private readonly string _timeZoneLabel = TimeZoneInfo.Local.StandardName;
     private int _stalled;
     private Timer? _timer;
 
-    protected override void OnInitialized()
+    /// <summary>The timeline window. Long enough to cover "it started sometime this morning", short enough
+    /// that the list stays readable without paging.</summary>
+    private static readonly TimeSpan TimelineWindow = TimeSpan.FromHours(6);
+
+    protected override async Task OnInitializedAsync()
     {
         Refresh();
+        await RefreshTimelineAsync();
 
         // Reading these costs no Docker call and no database round trip — they are process memory — so a
         // five-second refresh is free. That property is pinned by a test; if it ever stops being true, this
@@ -201,6 +257,35 @@ else
         _notRead = SelfStatusPresenter.UnreadContainers(
             _suspendedContainers, _exclusions, id => names.GetValueOrDefault(id, id), DateTime.UtcNow);
     }
+
+    /// <summary>Reads the timeline sources. Unlike the rest of this page these are database queries, so they
+    /// are refreshed on load and on demand rather than every five seconds — a status page that polls the
+    /// database twelve times a minute is load of its own.</summary>
+    private async Task RefreshTimelineAsync()
+    {
+        try
+        {
+            var since = DateTime.UtcNow - TimelineWindow;
+            var audit = await AuditLog.GetRecentAsync(count: 200);
+            var alerts = await Alerts.QueryAsync(severity: null, eventType: null, skip: 0, take: 200);
+
+            _timeline = ActionTimeline.Build(audit, alerts, serverId: null, sinceUtc: since);
+        }
+        catch
+        {
+            // The timeline is context, not a check. If the database is unhappy the rest of this page — which
+            // reads process memory and is exactly what you need when things are going wrong — must still render.
+            _timeline = Array.Empty<TimelineEntry>();
+        }
+    }
+
+    /// <summary>The one place a UTC instant becomes a local one. Everything upstream stays UTC (Plan-0003 WP5.2).</summary>
+    private static string Local(DateTime utc) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), TimeZoneInfo.Local)
+            .ToString("HH:mm:ss");
+
+    private string ServerName(string serverId) =>
+        ServerConfig.GetServer(serverId)?.Name ?? serverId;
 
     private static Color ColourFor(LoopVerdict verdict) => verdict switch
     {

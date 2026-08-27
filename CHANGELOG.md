@@ -20,6 +20,13 @@ All notable changes to Whiskers are documented here. The format follows
   the request. This affected the pre-existing container metrics too, not only the new self-metrics.
 
 ### Added
+- **"What has been happening" on `/self-status`** — the last six hours of fleet-changing actions in one list:
+  deploys, restarts, rule changes, agent actions, and Whiskers' own decisions (a pause, an open circuit, a
+  suspended log scan) side by side, because those change the numbers with nobody having touched the fleet.
+  Everything is computed in UTC and converted only at the point of display: a timeline with an offset in it
+  is worse than none, since it will confidently suggest that the thing which happened *after* the spike
+  caused it. Read-only actions are filtered out by excluding read verbs rather than by listing write ones, so
+  a newly added kind of intervention shows up by default instead of being silently missing.
 - **Containers whose logs are not being read are now listed, with the two reasons kept apart.** A container
   the scan gave up on after repeated timeouts and one deliberately excluded as Whiskers' own access path look
   identical from outside — no findings — and mean opposite things: a fault it will retry versus a decision.
