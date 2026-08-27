@@ -170,6 +170,9 @@
   <data name="Nav_HealthReports" xml:space="preserve">
     <value>Statusberichte</value>
   </data>
+  <data name="Nav_SelfStatus" xml:space="preserve">
+    <value>Whiskers über sich</value>
+  </data>
   <data name="Nav_CveMonitor" xml:space="preserve">
     <value>CVE-Monitor</value>
   </data>

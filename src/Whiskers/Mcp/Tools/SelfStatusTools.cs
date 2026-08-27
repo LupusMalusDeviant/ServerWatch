@@ -23,8 +23,8 @@ namespace Whiskers.Mcp.Tools;
 public class SelfStatusTools
 {
     /// <summary>A loop is called out once its last success is older than this many of its own intervals.
-    /// Same rule as <see cref="ScanSupervisor"/>, so tool and alert never disagree.</summary>
-    private const int IntervalsBeforeConcern = 3;
+    /// Read from <see cref="ScanSupervisor"/>, not copied, so tool and alert cannot drift apart.</summary>
+    private const int IntervalsBeforeConcern = ScanSupervisor.IntervalsBeforeAlarm;
 
     [McpToolLevel(McpPermissionLevels.Read)]
     [McpServerTool, Description("Report whether Whiskers itself is still working: for every background loop and server, how long ago it last completed a cycle, how long a cycle takes, how many failed, and which servers it deliberately skips and why — plus the per-server load budget and circuit-breaker state. Use this before trusting an absence of findings: a loop that has stopped produces no alerts at all, which looks exactly like a fleet with nothing wrong. Read-only.")]

@@ -36,6 +36,36 @@ public class ScanSupervisorTests
     }
 
     [Fact]
+    public async Task A_loop_that_runs_on_time_and_fails_every_cycle_is_reported()
+    {
+        // The supervisor used to fall back to the last ATTEMPT when there was no success, while its own
+        // comment claimed the opposite. A loop failing every cycle therefore kept resetting its age to zero
+        // and stayed silent forever — which is exactly the 2026-08-26 shape: the loop ran on time, achieved
+        // nothing, and nobody noticed for six days.
+        var (supervisor, metrics, sent) = Build();
+
+        for (var i = 0; i < 5; i++)
+            metrics.RecordCycle("logmonitor", "badwolf", TimeSpan.FromMilliseconds(1), success: false, interval: TinyInterval);
+
+        await supervisor.CheckAsync();
+
+        Assert.Equal("monitoring_stalled", Assert.Single(sent.Events).EventType);
+    }
+
+    [Fact]
+    public async Task A_loop_that_has_only_just_started_is_given_a_few_cycles()
+    {
+        // The other half. Reporting a loop on its first failed cycle would turn every restart into an
+        // incident, and an alarm that fires on every deploy is one people mute.
+        var (supervisor, metrics, sent) = Build();
+        metrics.RecordCycle("logmonitor", "badwolf", TimeSpan.FromMilliseconds(1), success: false, interval: TinyInterval);
+
+        await supervisor.CheckAsync();
+
+        Assert.Empty(sent.Events);
+    }
+
+    [Fact]
     public async Task A_loop_that_has_stopped_is_reported_once_and_its_return_is_reported_too()
     {
         var (supervisor, metrics, sent) = Build();

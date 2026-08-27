@@ -133,7 +133,8 @@ Die wichtigste Einzelkennzahl ist nicht ein Fehlerzähler, sondern **das Alter d
 | WP6.2 Null Docker-Aufrufe | ✅ | Test verlangt `Empty(docker.CallsInOrder)` über Sample + Restore |
 | WP6.3 Zeitreihenzahl | ✅ | `whiskers_self_series_total` |
 | WP-MCP | ✅ | `get_whiskers_self_status`, read; Test verlangt, dass eine tote Schleife **im Text allein** erkennbar ist |
-| WP4 Ansicht, WP5 Zeitachse | ⬜ offen | UI-Block |
+| WP4 Ansicht | ✅ | `/self-status`; Urteil in `SelfStatusPresenter` (getestet), Seite nur Darstellung |
+| WP5 Zeitachse | ⬜ offen | UI-Block |
 | WP6.1 Leerlaufmessung | ⬜ offen | braucht einen laufenden Host über 30 min |
 
 ### Die Persistenz löst ein zweites, größeres Problem
@@ -151,6 +152,25 @@ wichtigste — **ein Neustart darf einen echten Stillstand nicht verdecken**. F�
 eigenen Test; ein Restore, der jeden Neustart gesund aussehen ließe, wäre schlimmer als gar keiner.
 
 **Gegenbeweis geführt:** Restore abgeschaltet → der Neustart-Test wird rot.
+
+### Beim Bau der Ansicht sind zwei echte Fehler aufgefallen
+
+**1. Eine Schleife, die pünktlich läuft und jedes Mal scheitert, galt als gesund.** Der Wächter fiel auf den
+letzten *Versuch* zurück, wenn es keinen Erfolg gab — sein eigener Kommentar behauptete das Gegenteil. Damit
+setzte eine dauerhaft scheiternde Schleife ihr „Alter" jeden Zyklus auf null zurück und blieb für immer still.
+Das ist exakt die Form des Vorfalls vom 26.08.: Das, was pünktlich lief und nichts erreichte, war das, was
+niemand bemerkte. Neue Regel: Ohne je einen Erfolg wird nach **Anzahl der Gelegenheiten** geurteilt (drei
+Zyklen ohne Erfolg = Stillstand), nicht nach der Frische des letzten Versuchs — und ein frisch gestarteter
+Prozess bekommt diese drei Zyklen, damit nicht jeder Neustart zum Vorfall wird. Gegenbeweis: alte Regel
+wiederhergestellt → der Test wird rot.
+
+**2. `/metrics` lieferte kulturabhängige Zahlen.** Der Endpunkt liegt hinter `UseRequestLocalization` mit `de`
+als unterstützter Kultur. Ein Scraper (oder Browser) mit `Accept-Language: de` bekam `0,120` statt `0.120` —
+und Prometheus verwirft den **gesamten** Scrape bei der ersten unparsbaren Zeile. Die Überwachung wäre wegen
+eines Request-Headers dunkel geworden. Betroffen waren nicht nur die neuen `whiskers_self_*`-Serien, sondern
+auch das ältere `serverwatch_container_cpu_percent`. Der Endpunkt ist jetzt für die Dauer der Anfrage auf die
+invariante Kultur festgelegt; ein Test scrapt mit deutschem Header und verlangt, dass jeder Wert invariant
+parst.
 
 ## Reihenfolge und Abhängigkeiten
 

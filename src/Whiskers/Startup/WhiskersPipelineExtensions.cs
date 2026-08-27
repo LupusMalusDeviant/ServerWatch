@@ -309,6 +309,16 @@ public static class WhiskersPipelineExtensions
             .GetRequiredService<Microsoft.Extensions.Options.IOptions<MetricsSettings>>().Value.ScrapeToken;
         app.MapGet("/metrics", async (HttpContext ctx) =>
         {
+            // The Prometheus text format is NOT localised: every value needs a dot decimal separator. This
+            // endpoint sits behind UseRequestLocalization, which supports "de", so a scraper (or a browser)
+            // sending Accept-Language: de would otherwise render "0,120" — and Prometheus rejects the whole
+            // scrape on the first unparsable line. The monitoring would go dark because of a request header.
+            // Pinned for this request only; the finally puts the request's own culture back.
+            var callerCulture = System.Globalization.CultureInfo.CurrentCulture;
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+            try
+            {
+
             switch (MetricsScrapeAuth.Check(metricsScrapeToken, ctx.Request.Headers.Authorization.ToString()))
             {
                 case MetricsScrapeAuthResult.Disabled:
@@ -386,6 +396,12 @@ public static class WhiskersPipelineExtensions
 
             ctx.Response.ContentType = "text/plain; version=0.0.4; charset=utf-8";
             await ctx.Response.WriteAsync(sb.ToString());
+
+            }
+            finally
+            {
+                System.Globalization.CultureInfo.CurrentCulture = callerCulture;
+            }
         }).AllowAnonymous(); // gated by the scrape token inside, not by user auth
 
         // KRIT-3 step 2: static assets stay anonymous (the login page needs its CSS/JS). The

@@ -6,7 +6,27 @@ All notable changes to Whiskers are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **A background loop that ran on time and failed every single cycle was reported as healthy.** The
+  supervisory rule fell back to the last *attempt* when a loop had never succeeded, so a permanently failing
+  loop kept resetting its own age to zero and never triggered — the exact shape of the 2026-08-26 incident,
+  where the thing that ran on schedule and achieved nothing was the thing nobody noticed. A loop with no
+  successful cycle is now judged by how many chances it has had (three), not by how recently it tried; a
+  freshly started process still gets those three cycles, so a restart is not an incident.
+- **`/metrics` produced comma decimals for German-speaking clients.** The endpoint sits behind request
+  localization, so a scraper or browser sending `Accept-Language: de` received `0,120` instead of `0.120` —
+  and Prometheus rejects an entire scrape at the first unparsable line, which would have taken the monitoring
+  dark because of a request header. The endpoint is now pinned to the invariant culture for the duration of
+  the request. This affected the pre-existing container metrics too, not only the new self-metrics.
+
 ### Added
+- **A "Whiskers about itself" page** at `/self-status`: per loop and server, how long ago it last completed a
+  cycle (as an age, never a timestamp — a clock time makes the reader do the subtraction, and doing it wrong
+  is how a six-day-old failure goes unnoticed), the cycle duration, failures, and which servers a loop
+  deliberately skips. Plus the per-server load budget, circuit state, and whether background checks are
+  paused. The verdict comes from the same threshold the alert uses, read from it rather than copied: a page
+  with its own quietly different rule would look authoritative while contradicting the alert that woke
+  someone up.
 - **Whiskers' own loop health survives a restart, and the agent can ask about it.** The self-metrics are
   written to a new `SelfMetricSamples` table once a minute (additive migration, both providers) and restored
   on boot. The history is the smaller half of the point: after a restart the in-memory view is empty, and an

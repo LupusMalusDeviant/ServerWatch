@@ -25,7 +25,10 @@ public sealed class ScanSupervisor : BackgroundService
 {
     /// <summary>A gap of more than this many intervals is reported. Three, not one: a single missed cycle is
     /// normal (a slow host, a long scan), three in a row is not.</summary>
-    private const int IntervalsBeforeAlarm = 3;
+    /// <summary>Public because the status view and the MCP tool read it rather than keeping their own copy.
+    /// Two constants meaning the same thing drift, and the day they do, the page says "fine" about the loop
+    /// that just paged someone — after which the next person decides the alerting is broken, not the loop.</summary>
+    public const int IntervalsBeforeAlarm = 3;
 
     /// <summary>Never alarm faster than this, however short a loop's cadence is — a loop running every second
     /// must not be able to page someone after three seconds. Injectable ONLY so a test can produce a real
@@ -97,10 +100,18 @@ public sealed class ScanSupervisor : BackgroundService
             if (allowed < _minimumGap) allowed = _minimumGap;
 
             var key = $"{loop.Loop}|{loop.ServerId}";
-            // No successful cycle at all is treated as an age since the last attempt — a loop that has never
-            // succeeded is exactly as blind as one that stopped succeeding.
-            var reference = loop.LastSuccess ?? loop.LastAttempt;
-            var stalled = reference is null || now - reference.Value > allowed;
+
+            // A loop that has NEVER succeeded is judged by how many chances it has had, not by how recently it
+            // tried. Falling back to the last attempt here — which this did, while the comment claimed the
+            // opposite — meant a loop failing every single cycle looked permanently healthy: it kept attempting,
+            // so its "age" kept resetting to zero. That is precisely the 2026-08-26 shape, where the thing that
+            // ran on time and achieved nothing was the thing nobody noticed. Below the threshold it stays
+            // silent, because a process that has just started deserves a few cycles before being called broken.
+            var stalled = loop.LastSuccess is { } lastSuccess
+                ? now - lastSuccess > allowed
+                : loop.Cycles >= IntervalsBeforeAlarm;
+
+            var reference = loop.LastSuccess;
 
             if (stalled && _reported.Add(key))
                 await ReportAsync(loop, now - (reference ?? now), allowed, stalled: true);

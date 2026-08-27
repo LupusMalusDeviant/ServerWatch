@@ -122,6 +122,43 @@ public class SelfMetricsEndpointTests
     });
 
     [Fact]
+    public async Task A_german_scraper_still_gets_dot_decimals() => await WithAppAsync(async (client, services) =>
+    {
+        // /metrics sits behind UseRequestLocalization, which supports "de". Without an explicit culture pin a
+        // scraper sending Accept-Language: de gets "0,120" — and Prometheus rejects the ENTIRE scrape on the
+        // first unparsable line. The monitoring would go dark because of a request header, which is exactly
+        // the class of failure this whole work package exists to catch.
+        var metrics = services.GetRequiredService<ISelfMetrics>();
+        metrics.RecordCycle("logmonitor", "badwolf", TimeSpan.FromMilliseconds(1234.5), success: true, TimeSpan.FromMinutes(1));
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/metrics");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ScrapeToken);
+        request.Headers.AcceptLanguage.ParseAdd("de-DE");
+
+        var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Every sample line is "name{labels} value" — the value must parse under the invariant culture.
+        var values = body.Split('\n')
+            .Where(l => l.StartsWith("whiskers_self_", StringComparison.Ordinal))
+            .Select(l => l[(l.LastIndexOf(' ') + 1)..].Trim())
+            .Where(v => v.Length > 0)
+            .ToList();
+
+        Assert.NotEmpty(values);
+        foreach (var value in values)
+        {
+            Assert.DoesNotContain(",", value);
+            Assert.True(
+                double.TryParse(value, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out _),
+                $"Prometheus could not parse '{value}' — the whole scrape would be rejected.");
+        }
+    });
+
+    [Fact]
     public async Task The_endpoint_stays_shut_without_the_token() => await WithAppAsync(async (client, _) =>
     {
         var response = await client.GetAsync("/metrics");

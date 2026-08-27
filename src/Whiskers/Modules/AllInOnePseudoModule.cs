@@ -48,6 +48,8 @@ public sealed class AllInOnePseudoModule : IWhiskersModule
         // Übersicht
         new NavItem("",            "Nav_Dashboard",          Icons.Material.Filled.Dashboard,    "Übersicht",        AppRole.Viewer, 10),
         new NavItem("health",      "Nav_HealthReports",     Icons.Material.Filled.MonitorHeart, "Übersicht",        AppRole.Viewer, 20),
+        // Plan-0003 WP4 — "is Whiskers still working?", next to the fleet health it is supposed to report on.
+        new NavItem("self-status", "Nav_SelfStatus",        Icons.Material.Filled.Insights,     "Übersicht",        AppRole.Viewer, 25),
         // "cves" → Modules/Cve, "logs" → Modules/LogMonitor (RoadToSAP Phase 1).
         new NavItem("graph",       "Nav_Topology",          Icons.Material.Filled.Hub,          "Übersicht",        AppRole.Viewer, 50),
         new NavItem("diff",        "Nav_Compare",        Icons.Material.Filled.Compare,      "Übersicht",        AppRole.Viewer, 60),
