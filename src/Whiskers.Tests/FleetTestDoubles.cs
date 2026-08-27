@@ -134,6 +134,27 @@ internal sealed class FakeDocker : IDockerService
     /// longer than the monitor's fetch timeout reproduces the wedged host from the 2026-08-26 incident.</summary>
     public TimeSpan FetchDelay { get; set; } = TimeSpan.Zero;
 
+    /// <summary>
+    /// The fetch never finishes on its own — it ends only when the caller's token is cancelled.
+    ///
+    /// <para>This is what "wedged" actually means, and a finite <see cref="FetchDelay"/> does not model it. A
+    /// 400 ms delay against a 50 ms timeout looks decisive and is not: under thread-pool starvation the
+    /// cancellation timer lands late and the fetch runs to completion. Measured on 2026-08-27 with the pool
+    /// hogged: 60 attempts, 44 cancelled, 16 completed. In LogMonitorService a completed fetch calls
+    /// NoteReadable, which CLEARS the consecutive-timeout run — so a single such cycle silently reset the
+    /// three-strike counter and the lockout never fired. That is what made
+    /// LogMonitorWatermarkTests flaky twice in one day.</para>
+    ///
+    /// <para>Use this wherever a test needs a container that genuinely cannot be read. Keep
+    /// <see cref="FetchDelay"/> for tests about slowness and concurrency, where finishing is allowed.</para>
+    /// </summary>
+    public bool FetchHangs { get; set; }
+
+    private int _completedFetches;
+    /// <summary>Fetches that ran to completion instead of being cancelled — the number that decides whether a
+    /// "wedged" container really wedged.</summary>
+    public int CompletedFetches => Volatile.Read(ref _completedFetches);
+
     private readonly ConcurrentDictionary<string, int> _inFlight = new();
     private int _totalInFlight;
     private int _peakTotalInFlight;
@@ -164,7 +185,11 @@ internal sealed class FakeDocker : IDockerService
         {
             // Stands in for dockerd: an abandoned request only stops if the cancellation actually reaches the
             // backend. Honouring the token here is what makes the load invariants provable either way.
-            if (FetchDelay > TimeSpan.Zero) await Task.Delay(FetchDelay, ct);
+            // A wedged backend never answers; only cancellation ends the wait. No timer race, so a loaded
+            // machine cannot turn "unreadable" into "readable" behind the test's back.
+            if (FetchHangs) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            else if (FetchDelay > TimeSpan.Zero) await Task.Delay(FetchDelay, ct);
+            Interlocked.Increment(ref _completedFetches);   // reached only when the wait was NOT cancelled
 
             var lines = new List<string>();
             if (Logs.TryGetValue(key, out var always)) lines.Add(always);

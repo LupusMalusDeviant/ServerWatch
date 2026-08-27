@@ -58,7 +58,12 @@ public sealed class LogMonitorWatermarkTests : IDisposable
     private static FakeDocker WedgedContainer() =>
         new(new ContainerInfo { Id = "c-tunnel", Name = "ghostunnel", Image = "img:1", ServerId = "local", ServerName = "Badwolf" })
         {
-            FetchDelay = TimeSpan.FromMilliseconds(400)   // eight times the timeout: this fetch never succeeds
+            // NOT a long delay. "Eight times the timeout" reads decisive and is not: under thread-pool
+            // starvation the cancellation timer lands late and a 400 ms fetch completes — measured at 16 of 60
+            // attempts. A completed fetch clears the consecutive-timeout run, so one such cycle silently reset
+            // the three-strike counter and the lockout never fired. Hanging until cancelled has no timer to
+            // lose the race with.
+            FetchHangs = true
         };
 
     [Fact]
@@ -74,7 +79,7 @@ public sealed class LogMonitorWatermarkTests : IDisposable
         var monitor = Monitor(docker, new FakeNotifications());
 
         await monitor.RunScanCycleAsync(CancellationToken.None);   // healthy: sets the watermark
-        docker.FetchDelay = TimeSpan.FromMilliseconds(400);        // and now it wedges
+        docker.FetchHangs = true;                                  // and now it wedges — see WedgedContainer()
 
         // The gap between cycles has to be large enough that the ratchet would actually show. With a short
         // gap the window widens by that gap per cycle and any generous tolerance swallows it — an earlier
@@ -227,5 +232,28 @@ public sealed class LogMonitorWatermarkTests : IDisposable
             await monitor.RunScanCycleAsync(CancellationToken.None);
 
         Assert.DoesNotContain(notifications.Events, e => e.EventType == "log_scan_suspended");
+    }
+
+    [Fact]
+    public async Task The_wedged_container_never_answers_however_the_machine_is_behaving()
+    {
+        // Guards the fix for two CI flakes in one day (2026-08-27). The wedged container used to be modelled
+        // as a 400 ms delay against a 50 ms timeout, which reads decisive and is a race: with the thread pool
+        // hogged, 16 of 60 such fetches ran to completion. A completed fetch calls NoteReadable, which CLEARS
+        // the consecutive-timeout run — so one unlucky cycle reset the three-strike counter and the lockout
+        // silently never fired.
+        //
+        // Every suspension test here does exactly three cycles for a three-strike rule, so there is no margin
+        // to absorb that. Rather than widen the margin — which would have hidden a real lockout failure just
+        // as effectively — the fake now hangs until cancelled. This test is what stops it drifting back.
+        var docker = WedgedContainer();
+        var monitor = Monitor(docker, new FakeNotifications());
+
+        for (var i = 0; i < 3; i++)
+            await monitor.RunScanCycleAsync(CancellationToken.None);
+
+        Assert.True(docker.Calls.Count >= 3, $"expected at least 3 fetch attempts, saw {docker.Calls.Count}");
+        Assert.Equal(0, docker.CompletedFetches);
+        Assert.NotEmpty(monitor.SuspendedContainers());
     }
 }
