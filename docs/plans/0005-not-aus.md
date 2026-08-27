@@ -80,6 +80,32 @@ Dieser Plan hat eine ungewöhnliche Reihenfolge: **Die Aufsichtsregel wird zuers
 
 **Abnahme:** Aufrufrate in den ersten fünf Minuten nach Pausenende überschreitet das Normalniveau nicht.
 
+> 🟢 **WP4 erledigt (2026-08-27) — überwiegend durch Nachweis statt durch neuen Code.**
+>
+> WP4.1 und WP4.2 sind bereits erfüllt, aus früheren Paketen: Die Schleifen führen keine Warteschlange
+> versäumter Zyklen (ein nicht stattgefundener Zyklus ist einfach weg), und der Fensterdeckel aus Plan-0002
+> WP1 begrenzt `since` auf 10 Minuten, egal wie alt das Wasserzeichen ist. Beides ist jetzt durch Tests
+> festgehalten statt angenommen — „das Problem kann nicht auftreten" überlebt es, wenn jemand einen
+> Mechanismus wegrefaktoriert, „wir haben etwas gebaut" nicht.
+>
+> **WP4.3 (gestaffelter Wiederanlauf) ist bewusst nicht gebaut.** Die Abnahme ist gemessen: fünf Zyklen nach
+> einer Pause kosten exakt so viel wie fünf beliebige andere. Ein Sturm kann gar nicht entstehen — es gibt
+> nichts nachzuholen, das Fenster ist gedeckelt, und das Lastbudget aus Plan-0001 begrenzt die Gleichzeitigkeit
+> je Server ohnehin. Eine Staffelung wäre ein Mechanismus gegen ein Problem, das die vorhandenen Mechanismen
+> schon ausschließen; sie hätte vor allem den Nachteil, dass ein Server nach dem Aufheben der Pause noch
+> kurz als pausiert gälte, obwohl er es nicht mehr ist.
+>
+> ⚠️ **Zwei Testentwürfe in Folge haben nichts gemessen** — beide gegen einen Build ohne Fensterdeckel grün:
+>
+> 1. Ein Abstand von 20 ms zwischen zwei Zyklen gegen einen Deckel von 10 Minuten. Der Deckel greift dort
+>    nie, mit oder ohne Code.
+> 2. Die Annahme, ein frisch gesehener Container starte bei `DateTime.MinValue`. Er wird auf **jetzt**
+>    eingenordet („on first sight, baseline to now"), also greift der Deckel auch dort nicht.
+>
+> Behoben mit einem Testzugang wie beim Log-Timeout: `maxLookback` ist je Instanz setzbar, der Test schrumpft
+> ihn auf 50 ms und lässt 300 ms vergehen. Gegenprobe jetzt rot mit klarer Meldung. Das ist heute der fünfte
+> Test, der nicht gemessen hat, was er behauptete — alle fünf nur durch die Gegenprobe aufgefallen.
+
 ### WP5: Darstellung
 
 **Zweck:** Drei unterscheidbare Zustände.

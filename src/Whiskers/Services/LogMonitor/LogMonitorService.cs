@@ -61,12 +61,19 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
     // waiting 15 seconds each time. Production behaviour is unchanged: the constructor defaults to
     // DefaultLogFetchTimeout, and nothing outside the tests passes anything else.
     private readonly TimeSpan _logFetchTimeout;
+    private readonly TimeSpan _maxLookback;
 
     /// <summary>The widest window a single log fetch may ask for (Plan-0002 WP1). Applying <c>since</c> costs
     /// the daemon the whole file — it decodes the JSON log from the start to find the cut-off — so an
     /// ever-widening window is genuinely more work, which is what turned a slow container into a permanently
     /// failing one on 2026-08-26. Lines older than this are lost after an outage; that is the deliberate side
     /// of the trade, because without the cap they were lost anyway, only permanently.</summary>
+    /// <summary>The widest window a single fetch may ask for, whatever the watermark says (Plan-0002 WP1).
+    ///
+    /// <para>Overridable per instance for tests only. The cap engages solely when a watermark is older than
+    /// this, which in production means minutes — a test cannot wait that long, and a test that pretends to
+    /// exercise the cap with a 20-millisecond gap passes just as happily against a build with no cap at all.
+    /// That version of this test existed and proved nothing.</para></summary>
     public static readonly TimeSpan MaxLookback = TimeSpan.FromMinutes(10);
 
     // Lines fetched per container per cycle. Since the Docker call now caps the transfer even with a
@@ -94,7 +101,8 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         Observability.SelfMetrics.ISelfMetrics selfMetrics,
         Hygiene.ILogScanExclusions exclusions,
         Observability.Outcomes.IActionOutcomeService outcomes,
-        TimeSpan? logFetchTimeout = null)
+        TimeSpan? logFetchTimeout = null,
+        TimeSpan? maxLookback = null)
     {
         _scopeFactory = scopeFactory;
         _docker = docker;
@@ -106,6 +114,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
         _exclusions = exclusions;
         _outcomes = outcomes;
         _logFetchTimeout = logFetchTimeout ?? DefaultLogFetchTimeout;
+        _maxLookback = maxLookback ?? MaxLookback;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -276,7 +285,7 @@ public class LogMonitorService : BackgroundService, ILogMonitorService
                 // Capped at MaxLookback. Without the cap a failure left `since` behind while `now` moved on,
                 // so every failed cycle asked for a wider window than the last — failure made the next attempt
                 // more expensive, and the state was self-sustaining (Plan-0002 WP1).
-                var floor = fetchedAt - MaxLookback;
+                var floor = fetchedAt - _maxLookback;
                 var last = _lastLogCheck.TryGetValue(key, out var watermark) ? watermark : fetchedAt;
                 var since = last > floor ? last : floor;
                 var logs = await FetchLogsAsync(container, since, ct);
