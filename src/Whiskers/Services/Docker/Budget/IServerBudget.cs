@@ -11,7 +11,10 @@ public sealed record ServerBudgetSnapshot(
     long Started,
     long WaitedMillisecondsTotal,
     long MaxWaitMilliseconds,
-    long DiscardedDuplicates);
+    long DiscardedDuplicates,
+    /// <summary>Calls whose deadline expired mostly in this queue rather than at the server — Whiskers being
+    /// the bottleneck. Kept apart from failures so it cannot be mistaken for an unhealthy host.</summary>
+    long SaturationFailures);
 
 /// <summary>
 /// Caps the load Whiskers puts on ONE server, across every caller.
@@ -32,6 +35,26 @@ public sealed record ServerBudgetSnapshot(
 /// fetching. Not an error condition — the next cycle will ask again in a minute.</summary>
 public sealed class DuplicateRequestException(string key)
     : Exception($"An identical background request is already in flight: {key}");
+
+/// <summary>
+/// A call that ran out of time mostly while queued for a budget slot, not while talking to the server.
+///
+/// <para>The distinction decides who gets blamed. A deadline that expired at the host is a statement about the
+/// host and must count towards its circuit — that was the signal the 2026-08-26 incident produced for six days
+/// and nobody tallied. A deadline that expired in <em>our own</em> queue says nothing about the host at all,
+/// and counting it opens circuits across the whole fleet at once whenever Whiskers itself is busy. That is
+/// exactly what happened on 2026-08-27: a slow dashboard and a stream of "paused / resumed" notifications
+/// about servers that were perfectly healthy.</para>
+/// </summary>
+public sealed class BudgetSaturatedException(string serverId, TimeSpan waited, TimeSpan ran, Exception inner)
+    : Exception($"Call to '{serverId}' spent {waited.TotalSeconds:F1}s waiting for a budget slot and only " +
+                $"{ran.TotalSeconds:F1}s running before its deadline expired — the queue ran out the clock, " +
+                "not the server.", inner)
+{
+    public string ServerId { get; } = serverId;
+    public TimeSpan Waited { get; } = waited;
+    public TimeSpan Ran { get; } = ran;
+}
 
 public interface IServerBudget
 {

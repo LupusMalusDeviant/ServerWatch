@@ -127,9 +127,12 @@ public class DockerConnectionManager : IDockerConnectionManager
             _circuit.RecordSuccess(budgetKey);
             return result;
         }
-        catch (Exception ex) when (ex is not Budget.DuplicateRequestException)
+        catch (Exception ex) when (ex is not Budget.DuplicateRequestException
+                                   and not Budget.BudgetSaturatedException)
         {
-            // A discarded duplicate is not a health signal — the server never saw it.
+            // A discarded duplicate is not a health signal — the server never saw it. Neither is a call that
+            // ran out of time in our own queue: blaming the host for our backlog opens circuits across the
+            // whole fleet at once, which is what happened on 2026-08-27.
             _circuit.RecordFailure(budgetKey, ex);
             throw;
         }
@@ -187,10 +190,21 @@ public class DockerConnectionManager : IDockerConnectionManager
                 throw;
             }
         }
+        // Saturation first: a deadline that expired in our own queue is a statement about this budget, not
+        // about the host, and must not reach the circuit below.
+        catch (Budget.BudgetSaturatedException ex)
+        {
+            _logger.LogWarning(
+                "Call to {Server} gave up while queued ({Waited:F1}s waiting, {Ran:F1}s running). This is " +
+                "Whiskers being the bottleneck — the server was never asked.",
+                budgetKey, ex.Waited.TotalSeconds, ex.Ran.TotalSeconds);
+            throw;
+        }
         catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
         {
-            // Our own deadline expiring is a statement about this host's responsiveness, so it counts —
-            // that is the signal the 2026-08-26 incident produced for six days and nobody tallied.
+            // Our own deadline expiring AT THE HOST is a statement about its responsiveness, so it counts —
+            // that is the signal the 2026-08-26 incident produced for six days and nobody tallied. The
+            // saturation case above is deliberately excluded: same exception, opposite meaning.
             _circuit.RecordFailure(budgetKey, ex);
             throw;
         }

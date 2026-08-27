@@ -29,6 +29,11 @@ public sealed class ServerBudget : IServerBudget
         public long WaitedMillisecondsTotal;
         public long MaxWaitMilliseconds;
         public long DiscardedDuplicates;
+
+        /// <summary>Calls whose deadline expired mostly in the queue rather than at the server. A rising
+        /// number means Whiskers is the bottleneck — and, unlike a plain timeout, it says so instead of
+        /// blaming the host.</summary>
+        public long SaturationFailures;
         public readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> InFlightKeys = new(StringComparer.Ordinal);
     }
 
@@ -94,9 +99,20 @@ public sealed class ServerBudget : IServerBudget
         if (background) Interlocked.Increment(ref lanes.BackgroundInFlight);
         else Interlocked.Increment(ref lanes.InteractiveInFlight);
 
+        var startedAt = Stopwatch.GetTimestamp();
         try
         {
             return await operation();
+        }
+        // A deadline that expired after the call spent longer queued than running is a statement about this
+        // budget, not about the server. Handing the caller a plain timeout here is what let the circuit
+        // breaker blame six healthy servers at once for our own backlog.
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException
+                                   && Stopwatch.GetElapsedTime(startedAt) < TimeSpan.FromMilliseconds(waitMs))
+        {
+            Interlocked.Increment(ref lanes.SaturationFailures);
+            throw new BudgetSaturatedException(
+                serverId, TimeSpan.FromMilliseconds(waitMs), Stopwatch.GetElapsedTime(startedAt), ex);
         }
         finally
         {
@@ -121,7 +137,8 @@ public sealed class ServerBudget : IServerBudget
         Interlocked.Read(ref l.Started),
         Interlocked.Read(ref l.WaitedMillisecondsTotal),
         Interlocked.Read(ref l.MaxWaitMilliseconds),
-        Interlocked.Read(ref l.DiscardedDuplicates));
+        Interlocked.Read(ref l.DiscardedDuplicates),
+        Interlocked.Read(ref l.SaturationFailures));
 
     private Lanes LanesFor(string serverId) =>
         _lanes.GetOrAdd(serverId, id =>
