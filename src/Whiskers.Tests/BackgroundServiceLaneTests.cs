@@ -103,4 +103,62 @@ public class BackgroundServiceLaneTests
 
         Assert.False(budget.IsBackgroundCall);
     }
+
+    // ---- the lane has to be wide enough for everyone now in it -----------------------------------------
+
+    [Fact]
+    public void The_background_lane_carries_every_loop_not_just_the_two_that_used_to_be_in_it()
+    {
+        // Four slots were sized when two loops used this lane and ten sat in the interactive one — eight
+        // slots across two queues in practice. Moving all twelve here without widening it halved the fleet's
+        // background capacity, and every server's circuit opened within four seconds of the next restart.
+        var settings = new Whiskers.Configuration.ServerBudgetSettings();
+
+        Assert.True(settings.BackgroundConcurrency >= 8,
+            $"twelve loops share this lane; {settings.BackgroundConcurrency} slots is less than the fleet " +
+            "effectively had before they were consolidated into it");
+    }
+
+    // ---- and they must not all start in the same second ------------------------------------------------
+
+    [Fact]
+    public void The_loops_do_not_all_start_at_once()
+    {
+        // THE assertion for the startup burst. Identical offsets are the bug; the work is the same either
+        // way, only the pile-up is avoidable.
+        var offsets = HostedLoops()
+            .Where(t => typeof(FleetBackgroundService).IsAssignableFrom(t))
+            .Select(FleetBackgroundService.StartupOffset)
+            .ToList();
+
+        Assert.True(offsets.Distinct().Count() >= offsets.Count - 1,
+            "the loops must not share a startup offset — that is the pile-up this exists to prevent");
+        Assert.True(offsets.Max() - offsets.Min() > TimeSpan.FromSeconds(5),
+            $"offsets span only {(offsets.Max() - offsets.Min()).TotalSeconds:F1}s — too tight to spread the burst");
+    }
+
+    [Fact]
+    public void No_loop_is_delayed_beyond_the_spread()
+    {
+        // A stagger that pushes a loop minutes out would trade a noisy restart for a monitor that is simply
+        // not running yet — the exact confusion the whole self-protection strand exists to remove.
+        foreach (var type in HostedLoops().Where(t => typeof(FleetBackgroundService).IsAssignableFrom(t)))
+        {
+            var offset = FleetBackgroundService.StartupOffset(type);
+            Assert.InRange(offset, TimeSpan.Zero, FleetBackgroundService.StartupSpread);
+        }
+    }
+
+    [Fact]
+    public void The_same_loop_always_gets_the_same_offset()
+    {
+        // Deterministic on purpose: a staggered start that shuffles itself makes every startup problem a
+        // different startup problem. string.GetHashCode() would have done exactly that — it is randomised
+        // per process.
+        var metrics = Assert.Single(HostedLoops(), t => t.Name == "MetricsCollectorService");
+        var first = FleetBackgroundService.StartupOffset(metrics);
+        var again = FleetBackgroundService.StartupOffset(metrics);
+
+        Assert.Equal(first, again);
+    }
 }

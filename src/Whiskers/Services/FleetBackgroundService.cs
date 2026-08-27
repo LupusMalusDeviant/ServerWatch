@@ -27,11 +27,48 @@ namespace Whiskers.Services;
 /// </summary>
 public abstract class FleetBackgroundService : BackgroundService
 {
+    /// <summary>How wide the startup offsets are spread. Twelve loops land roughly two and a half seconds
+    /// apart, which is long enough to matter and short enough that nobody notices a loop starting late.</summary>
+    internal static readonly TimeSpan StartupSpread = TimeSpan.FromSeconds(30);
+
     protected sealed override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Set before the first await so it flows down the whole loop, including anything the loop starts.
         using var background = ServerBudget.EnterBackground();
+
+        // Every loop used to fire in the same second, so a restart put a dozen fleet-wide sweeps into the
+        // budget at once, calls timed out waiting, and every server's circuit opened within four seconds —
+        // followed by a paused/resumed notification per server. Six deploys in a day made that the loudest
+        // thing in the notification list. The work is identical either way; only the pile-up was avoidable.
+        var offset = StartupOffset(GetType());
+        if (offset > TimeSpan.Zero)
+        {
+            try { await Task.Delay(offset, stoppingToken); }
+            catch (OperationCanceledException) { return; }
+        }
+
         await RunAsync(stoppingToken);
+    }
+
+    /// <summary>
+    /// A stable per-loop startup offset inside <see cref="StartupSpread"/>.
+    ///
+    /// <para>Derived from the type name rather than drawn at random, so the order is the same on every boot:
+    /// a staggered start that shuffles itself is one more thing that behaves differently each time somebody
+    /// tries to reproduce a startup problem. <see cref="string.GetHashCode()"/> is deliberately not used — it
+    /// is randomised per process, which would make this random with extra steps.</para>
+    /// </summary>
+    internal static TimeSpan StartupOffset(Type loop)
+    {
+        var name = loop.Name;
+        uint hash = 2166136261;                      // FNV-1a, stable across processes and runs
+        foreach (var c in name)
+        {
+            hash ^= c;
+            hash *= 16777619;
+        }
+
+        return TimeSpan.FromMilliseconds(hash % (ulong)StartupSpread.TotalMilliseconds);
     }
 
     /// <summary>The loop body, exactly as <c>ExecuteAsync</c> would have been written.</summary>

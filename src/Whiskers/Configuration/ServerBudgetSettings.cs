@@ -11,9 +11,20 @@ public class ServerBudgetSettings
 {
     public const string SectionName = "ServerBudget";
 
-    /// <summary>Concurrent calls the background loops may share per server. Four leaves room for the log,
-    /// health, metrics and CVE loops to make progress without any one of them monopolising the host.</summary>
-    public int BackgroundConcurrency { get; set; } = 4;
+    /// <summary>
+    /// Concurrent calls the background loops may share per server.
+    ///
+    /// <para>Raised from four to eight on 2026-08-27. Four was chosen when only two loops actually used this
+    /// lane — the other ten had never entered it and were queueing in the interactive lane instead, so the
+    /// fleet in practice had eight slots split across two queues. Putting all twelve loops where they belong
+    /// halved the background capacity in one step, and the first symptom was every server's circuit opening
+    /// within four seconds of startup. Eight restores what was really there, without taking the interactive
+    /// lane back from the people waiting on it.</para>
+    ///
+    /// <para>It is still a cap, and that is the point: the 2026-08-26 incident ran on ten concurrent full-log
+    /// scans against a two-core host.</para>
+    /// </summary>
+    public int BackgroundConcurrency { get; set; } = 8;
 
     /// <summary>A separate lane for anything a human is waiting for. Kept apart on purpose: sharing one
     /// queue means a long background scan freezes the UI, which then looks like the server is down.</summary>
