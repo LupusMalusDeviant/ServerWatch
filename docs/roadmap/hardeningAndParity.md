@@ -124,6 +124,44 @@ Jedes Paket-PRD trägt dafür eine `FR-MCP`-Zeile, jeder Plan ein `WP-MCP`-Arbei
 
 ---
 
+## 5a. Stand 2026-08-27 und was noch einen Server braucht
+
+**Wellen 0 bis 3 sind im Kern umgesetzt** (835 Tests, nichts deployt). Erledigt: SP-1 (Abbruch, Lastbudget,
+Circuit), SP-2, SP-3 (bis auf die Leerlaufmessung), SP-4, SP-5, SP-6 (WP1/WP2/WP5), SP-7, MCP. **GAP-1 bis
+GAP-5 sind unberührt** — das sind Wochen, keine Stunden.
+
+### Bewusst verworfen, mit Begründung im jeweiligen Plan
+
+| Punkt | Warum nicht |
+|---|---|
+| SP-5 WP3 — Auto-Pause bei offenem Circuit | Der Circuit sperrt ohnehin; eine Pause obendrauf nähme die Überwachung weg, wenn der Server wackelt (Nutzerentscheidung) |
+| SP-5 WP1.2 — Pause überlebt Neustart | Eine Pause reagiert auf etwas, das gerade passiert; überlebt sie den Neustart, überlebt sie ihren Grund (Nutzerentscheidung) |
+| SP-5 WP4.3 — gestaffelter Wiederanlauf | Gemessen: es entsteht kein Sturm. Mechanismus gegen ein Problem, das die vorhandenen Mechanismen ausschließen |
+| SP-6 WP3/WP4 — Rücknahme, Wiederholungssperre | Der Plan verlangt selbst vier Wochen Beobachtung zuerst |
+| SP-1 — 16 der 24 Docker-Aufrufstellen | Interaktiv oder langlaufend; eine Circuit-Abweisung nähme dem Betreiber die Reparatur im ungünstigsten Moment |
+
+### Abnahmen, die ohne laufenden Server nicht zu erbringen sind
+
+Diese Punkte sind **nicht offen im Sinne von unerledigt** — der Code steht und ist getestet. Was fehlt, ist
+die Messung an der Wirklichkeit, und die braucht einen Deploy:
+
+| Paket | Abnahme |
+|---|---|
+| SP-1 | Feldnachweis über 48 h auf zwei realen Servern (dockerd-CPU, Deskriptorzahl protokolliert) |
+| SP-3 | Leerlaufmessung über 30 min mit und ohne Selbstmessung (WP6.1) |
+| SP-4 | `stress-ng` auf dem Host → Meldung mit korrekter Ursachenklasse; künstlich verlangsamter Proxy → Latenzmeldung |
+| SP-4 | **Fehlalarmquote** — der synthetische Prüfstand beweist, dass die Regeln anschlagen, nicht dass sie in einer normalen Woche schweigen |
+| SP-5 | Wirksamkeit des Not-Aus am Zielserver: 0 neue Anfragen binnen 60 s |
+| SP-7 | Gemessene Loggröße gegen `du -sh` (< 20 % Abweichung); Behebungsbefehl läuft ohne Nacharbeit |
+| alle | `tools/list` am laufenden Server enthält die neuen Werkzeuge mit der erwarteten Stufe |
+
+Der letzte Punkt betrifft alle Pakete gemeinsam und hat einen konkreten Anlass: Von 0.12.0 bis 0.13.0 hat der
+MCP-Server **null** Werkzeuge ausgeliefert, und kein Test, kein Log und kein Alarm hat es gesagt. Der
+`McpServedSurfaceTests` bootet inzwischen die echte Anwendung und fragt `tools/list` ab — aber die Gegenprobe
+am tatsächlich laufenden Server bleibt der einzige Beweis, der zählt.
+
+---
+
 ## 6. Querverweise
 
 - [Vorfallsbericht 2026-08-26](../reviews/2026-08-26-logmonitor-dockerd-cpu-incident.md) — Ursache, Messwerte, Prüfkriterium
