@@ -124,6 +124,56 @@ Jedes Paket-PRD trägt dafür eine `FR-MCP`-Zeile, jeder Plan ein `WP-MCP`-Arbei
 
 ---
 
+## 4a. Strang EH — Ehrlichkeit und Selbstnachweis (neu, 2026-08-27)
+
+Aufgenommen nach einem Tag, an dem vier reale Probleme durch neue Wächter auffielen — und alle vier dieselbe
+Form hatten: **etwas hatte still aufgehört zu funktionieren, und alles sah gesund aus.** Trivy lieferte seit
+Monaten nichts, ein entfernter Server meldete weiter Befunde, ein Container trug 29 Tage alte Scandaten, ein
+Log wuchs auf 1,78 GB. Keines davon war ein Fehler im Sinne von „etwas ist kaputtgegangen"; jedes war ein
+Ausbleiben, das wie Ruhe aussah.
+
+Alles auf den Strängen SP und GAP macht Whiskers **größer**. Dieser Strang macht es **ehrlicher**, und bei
+einem Werkzeug, dessen Kernversprechen „ich sage dir, wenn etwas nicht stimmt" lautet, ist das die wertvollere
+Richtung.
+
+| # | Paket | Was es löst | Aufwand |
+|---|---|---|---|
+| EH-1 | **Kanarienvogel für die Erkennungskette** | Whiskers legt periodisch selbst einen winzigen Container an, der eine bekannte Fehlerzeile ausgibt und ein Image mit bekanntem CVE trägt, und behauptet: binnen N Minuten muss die eigene Kette das gemeldet haben. Bleibt die Meldung aus, ist die **Erkennung** kaputt, nicht der Container. Tests beweisen die Kette zum Bauzeitpunkt; das hier beweist sie jetzt — und macht aus „unbewiesen im Ruhighalten" einen Beweis von der anderen Seite: wenn der Kanarienvogel zuverlässig gefunden wird und sonst Stille herrscht, ist die Stille echt. | S |
+| EH-2 | **Herkunft der Konfiguration** | Für jede wirksame Einstellung zeigen, welche Quelle gewonnen hat (Standard / appsettings / Umgebung / `data/app-settings.json`). Anlass: `CveMonitor__CheckIntervalHours=1` war im Container gesetzt, sichtbar und **wirkungslos** — `app-settings.json` gewinnt, und nichts sagte das. Übersetzt „ich habe es doch gesetzt" in eine Tabelle. | S |
+| EH-3 | **Änderungsstrom der Flotte** | Container erstellt/entfernt/Image gewechselt, Konfigurationsdrift, Server hinzugekommen — mit Zeitstempel. Fast jeder Vorfall beginnt mit „was hat sich geändert?", und das ist heute die einzige Frage, die Whiskers nicht beantworten kann. Am 2026-08-27 wurde sie viermal durch Archäologie beantwortet (Container-IDs vergleichen, `ScannedAt` lesen). | M |
+| EH-4 | **Abdeckung als Zahl** | Je Fähigkeit und Server: CVE 8/9, Log-Scan 8/9 (1 durch Regel X ausgenommen), Metriken 9/9 — muss 100 % sein oder sich erklären. Im Log stand bereits „8 gescannt, von 9"; die Lücke wurde gedruckt und von niemandem gezählt. Genau darin saß ghostunnel vier Wochen. Verallgemeinert den Fund, statt ihn einmalig zu reparieren. | S–M |
+| EH-5 | **Wiederherstellungs-Übung** | Die letzte F3-Sicherung periodisch in einen Wegwerf-Container zurückspielen und behaupten: bootet, Migrationen sauber, N Datensätze da. Eine Sicherung, die nie zurückgespielt wurde, ist eine Behauptung. | S–M |
+| EH-6 | **„Du sägst den Ast, auf dem du sitzt"-Prüfung** | Vor einer Aktion erkennen, ob das Ziel auf dem Pfad liegt, über den die Aktion selbst läuft — und dann abkoppeln statt mittendrin sterben. Am 2026-08-27 traf das zweimal zu: ghostunnel neu erstellen kappt die mTLS-Leitung, über die der Befehl kam, und ein Whiskers-Selbstdeploy killt den eigenen Container mitten im Flip. Beides ist heute Erfahrungswissen in einer Memory-Datei, kein Mechanismus. | S |
+
+### Abhängigkeiten EH
+
+```
+SP-3 (Selbstbeobachtung) ──> EH-1 (der Kanarienvogel misst gegen dieselben Zähler)
+SP-3                     ──> EH-4 (Abdeckung ist eine Selbstmetrik)
+EH-3 (Änderungsstrom)    ──> GAP-6 (Update-Bewertung braucht die Historie)
+EH-6  unabhängig, klein, sofort
+```
+
+---
+
+## 4b. Strang GAP, Erweiterung (2026-08-27)
+
+| # | Paket | Verlorener Vergleichspunkt / Nutzen | Aufwand |
+|---|---|---|---|
+| GAP-6 | **Update-Bewertung: bricht das etwas?** | Vor einem Image-Update ausrechnen, was sich ändert: Basis-OS-Wechsel, Major-Sprung am Tag, geänderte `VOLUME`/`EXPOSE`/`ENTRYPOINT`/`USER` im neuen Image gegen die laufende Container-Konfiguration — und wie viele CVEs das Update tatsächlich schließt. Ergebnis ist ein Satz wie „schließt 41 CVEs, wechselt den Entrypoint, verlangt ein neues Volume — mittleres Risiko, hoher Nutzen". **Zu großen Teilen aus Vorhandenem zusammensetzbar:** Auto-Update, C12-Rollback (Snapshot + Rücknahme), CVE-Scanner und SP-6-Wirkungskontrolle existieren bereits; es fehlt der Vergleich davor. | M |
+| GAP-7 | **Wirkungsradius einer Änderung, vorher** | Welche *anderen* Container eine Aktion mitreißt (Compose-Projekt, `depends_on`, Netzwerke). Anlass: am 2026-08-27 erstellte eine **neue** Override-Datei alle drei Authentik-Dienste neu, obwohl nur zwei geändert waren — die Datenbank startete unerwartet mit. Whiskers kann das vorher ausrechnen und als Trockenlauf zeigen. Natürliche Erweiterung von GAP-6. | S–M |
+| GAP-8 | **Bedient der Dienst überhaupt?** | Zugriffszahlen, Statuscode-Verteilung und Antwortzeiten je Container — aus den **Access-Logs des Reverse Proxy** (Caddy / nginx-proxy-manager laufen in der Flotte), ohne die Anwendung anzufassen. Kein Marketing-Werkzeug: der operative Punkt ist, dass ein Container „Up (healthy)" melden und dabei durchgehend 502 ausliefern kann, oder dass Verkehr wegbricht, ohne dass irgendein Innensignal ausschlägt. Grenzt an GAP-2 (externe Checks) und schließt die Lücke zwischen „Prozess läuft" und „Dienst funktioniert". | M |
+
+### Bewusst NICHT aufgenommen
+
+| Idee | Warum nicht |
+|---|---|
+| **SEO-Analyse je Container** | Whiskers hat keinen Crawler, keine Keyword-Daten, keinen Wettbewerbsindex — es würde das schlecht machen, wofür es spezialisierte Werkzeuge gibt. Die operativ nützliche Teilmenge (TLS-Gültigkeit, Statuscode, `robots.txt`/Sitemap vorhanden, Weiterleitungsketten, Antwortzeit, Mixed Content) ist **Seiten-Gesundheit, nicht SEO**, und gehört als Prüfungstyp in GAP-2. So benannt verspricht sie nichts, was sie nicht hält. |
+| **Besucher-Analytik** (eindeutige Besucher, Verweise, Verweildauer) | Anderes Produkt. Plausible/Umami machen es besser; der operative Teil steckt bereits in GAP-8. |
+| **Deploy-Webhook aus der CI** | **Existiert bereits:** signierte Webhooks (`X-Hub-Signature-256`, GitHub-kompatibel) lösen `GitDeploy` und `Recreate` aus. Offen ist kein Code, sondern ein dokumentiertes Rezept — plus die Warnung, dass ein Webhook, der **Whiskers selbst** deployt, in EH-6 läuft: der Container killt sich mitten im Flip. Für Fremddienste unproblematisch. |
+
+---
+
 ## 5a. Stand 2026-08-27 und was noch einen Server braucht
 
 **Wellen 0 bis 3 sind umgesetzt und seit 2026-08-27 auf Badwolf deployt** (864 Tests, Stand `bb1216d`). Erledigt: SP-1 (Abbruch, Lastbudget,
