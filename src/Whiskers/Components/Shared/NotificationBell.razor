@@ -6,6 +6,13 @@
 
 @* The activator is a plain MudMenu Icon button — the exact pattern the (working) theme menu uses.
    The MudBadge only wraps it to show the unread count; it does not intercept the click. *@
+@{
+    // One snapshot per render: Store.Recent copies the list under a lock on every access, and the markup
+    // reads it several times.
+    var recent = Store.Recent;
+    var visible = _open ? recent.Take(DropdownLimit).ToList() : [];
+}
+
 <MudBadge Content="@Store.UnreadCount" Max="99" Visible="@(Store.UnreadCount > 0)" Color="Color.Error" Overlap="true" Bordered="true" Class="sw-notify-badge">
     <MudMenu Icon="@(Store.UnreadCount > 0 ? Icons.Material.Filled.NotificationsActive : Icons.Material.Filled.Notifications)"
              Color="Color.Inherit" title="Benachrichtigungen"
@@ -14,20 +21,31 @@
             <div style="display:flex; align-items:center; padding:8px 12px;">
                 <MudText Typo="Typo.subtitle2">Benachrichtigungen</MudText>
                 <MudSpacer />
-                @if (Store.Recent.Count > 0)
+                @if (recent.Count > 0)
                 {
                     <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="Clear">Leeren</MudButton>
                 }
             </div>
             <MudDivider />
-            @if (Store.Recent.Count == 0)
+            @* The list is built ONLY while the menu is open. MudMenu renders its content whether or not it
+               is showing — it hides the popover with CSS — so a hundred notifications meant a hundred menu
+               items, each with an icon and three text blocks, in the render tree of EVERY page: this bell
+               lives in the layout. It cost nothing while the fleet was quiet and a handful of entries sat
+               here. On 2026-08-27 a circuit-breaker regression produced a notification storm, the store hit
+               its 100-item cap, and the dashboard became visibly slow to load. The notifications were the
+               symptom of that bug; rendering them all was a second one underneath. *@
+            @if (!_open)
+            {
+                <div style="padding:24px; text-align:center; color:rgba(255,255,255,0.4);">…</div>
+            }
+            else if (visible.Count == 0)
             {
                 <div style="padding:24px; text-align:center; color:rgba(255,255,255,0.4);">Keine Benachrichtigungen</div>
             }
             else
             {
                 <div style="max-height:420px; overflow-y:auto;">
-                    @foreach (var n in Store.Recent)
+                    @foreach (var n in visible)
                     {
                         <MudMenuItem OnClick="@(() => OnRowClick(n))" Style="white-space:normal;">
                             <div style="display:flex; gap:10px; align-items:flex-start; max-width:420px;">
@@ -70,8 +88,15 @@
         StateHasChanged();
     });
 
+    /// <summary>How many entries the dropdown shows. The rest are one click away under "Alle anzeigen" —
+    /// nobody scrolls a hundred toasts, and every one of them is a component on the page.</summary>
+    private const int DropdownLimit = 15;
+
+    private bool _open;
+
     private void OnOpenChanged(bool open)
     {
+        _open = open;
         if (open) Store.MarkAllRead();
     }
 

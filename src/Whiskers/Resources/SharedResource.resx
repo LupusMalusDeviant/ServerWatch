@@ -1308,6 +1308,9 @@ Project: {4}</value>
   <data name="Dashboard_Server_Unreachable" xml:space="preserve">
     <value>unreachable</value>
   </data>
+  <data name="Dashboard_Server_Loading" xml:space="preserve">
+    <value>loading …</value>
+  </data>
   <data name="Dashboard_Snackbar_LoadError" xml:space="preserve">
     <value>Failed to load containers: {0}</value>
   </data>

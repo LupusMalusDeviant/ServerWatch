@@ -199,6 +199,16 @@
                     </MudTooltip>
                 }
             }
+            else if (_serverInfos.Count == 0)
+            {
+                @* Not loaded yet is NOT unreachable. Phase 3 fetches the server info in the background, and
+                   until it lands this branch used to render every server in red as "nicht erreichbar" — the
+                   page stating a fleet-wide outage with full confidence while it was simply still loading.
+                   The whole self-protection strand is about absence of data not being read as a verdict;
+                   this is the same mistake pointing the other way. *@
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="ml-2" />
+                <MudText Typo="Typo.body2" Color="Color.Default" Class="ml-2">@L["Dashboard_Server_Loading"]</MudText>
+            }
             else
             {
                 <MudText Typo="Typo.body2" Color="Color.Error" Class="ml-2">@L["Dashboard_Server_Unreachable"]</MudText>
