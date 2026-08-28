@@ -74,16 +74,32 @@ public class TrivyScanner : ITrivyScanner
         // (e.g. compose-built app images like `rabenhof-web`, `serverwatch-web`). Without it
         // Trivy fails those with a FATAL "unable to find the specified image". Registry
         // images continue to resolve exactly as before.
-        var cmd =
+        string Command(bool fromRegistry) =>
             $"docker run --rm -v {CacheVolume}:/root/.cache/trivy " +
-            $"-v /var/run/docker.sock:/var/run/docker.sock {trivyImage} " +
-            $"image --format json --quiet --no-progress --timeout 8m " +
+            (fromRegistry ? "" : "-v /var/run/docker.sock:/var/run/docker.sock ") +
+            $"{trivyImage} image " +
+            (fromRegistry ? "--image-src remote " : "") +
+            $"--format json --quiet --no-progress --timeout 8m " +
             ShellUtils.Quote(image);
 
         // First scan on a server downloads the Trivy DB (~600 MB compressed) so allow
         // up to 10 minutes. Subsequent scans usually finish in seconds.
-        var exec = await _executor.ExecuteAsync(serverId, cmd, TimeSpan.FromMinutes(10), ct,
-            maxOutputChars: MaxTrivyOutputChars);
+        var exec = await _executor.ExecuteAsync(serverId, Command(fromRegistry: false),
+            TimeSpan.FromMinutes(10), ct, maxOutputChars: MaxTrivyOutputChars);
+
+        // On a host whose Docker uses the containerd image store, exporting the image from the daemon can
+        // omit layers and Trivy stops with "not found in tar". Nothing is damaged — the same digest scans
+        // fine where the classic overlay2 driver is in use — so read it from the registry instead. Narrow on
+        // purpose: a blanket retry would hide an unreachable host behind an internet pull.
+        if (TrivyImageSource.ShouldRetryFromRegistry(exec.Output) ||
+            TrivyImageSource.ShouldRetryFromRegistry(exec.Error))
+        {
+            _logger.LogInformation(
+                "Trivy could not export {Image} from the daemon on {Server} (containerd image store) — " +
+                "retrying from the registry", image, serverId);
+            exec = await _executor.ExecuteAsync(serverId, Command(fromRegistry: true),
+                TimeSpan.FromMinutes(10), ct, maxOutputChars: MaxTrivyOutputChars);
+        }
         if (!exec.Success || string.IsNullOrWhiteSpace(exec.Output))
         {
             result.Error = $"trivy exit {exec.ExitCode}: " +

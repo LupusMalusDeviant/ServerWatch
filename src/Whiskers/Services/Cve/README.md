@@ -41,6 +41,33 @@ database — a monitoring outage caused by monitoring. So the endpoint says *tha
 `get_cve_summary` (MCP) names *which* target, worst first, where one question is asked at a time and
 cardinality costs nothing. Both halves are needed: a count with no name leaves an operator nowhere to go.
 
+## Der containerd-Image-Store bricht Trivys Docker-Export (2026-08-28)
+
+Trivy exportiert das Image standardmäßig aus dem Docker-Daemon und liest das entstehende Tar. Auf einem Host,
+dessen Docker den **containerd-Image-Store** benutzt (`io.containerd.snapshotter.v1` statt des klassischen
+`overlay2`), fehlen in diesem Export Schichten, und Trivy bricht ab mit
+`file blobs/sha256/… not found in tar`.
+
+**Es ist nichts beschädigt** — und alles an diesem Fehler lädt zur falschen Diagnose ein. Vier Hypothesen
+wurden geprüft und widerlegt, bevor der Speichertreiber als einziger Unterschied übrig blieb:
+
+| Vermutung | Widerlegt durch |
+|---|---|
+| `NetworkMode=host` | zwei Betroffene laufen im Bridge-Netz, `serverwatch` selbst host-networked und gesund |
+| beschädigte lokale Schichten | Image entfernt und frisch gezogen — Fehler unverändert |
+| Docker-Version | alle Server auf 29.5.x, identischer Image-Digest, einer scannt, einer nicht |
+| Trivy-Cache | mit komplett frischem Cache derselbe Fehler |
+
+`TrivyScanner` versucht deshalb bei **genau dieser** Fehlersignatur einen zweiten Lauf mit
+`--image-src remote`, liest das Image also aus der Registry statt aus dem Daemon. Der lokale Weg bleibt die
+Vorgabe: Er ist kostenlos und erfasst lokal gebaute Images, die in keiner Registry liegen. Die Wiederholung ist
+bewusst **eng** an die Signatur gebunden — ein Blanko-Retry würde einen nicht erreichbaren Host beantworten,
+indem er still aus dem Internet zieht, und nur der zweite Fehlschlag wäre je zu sehen.
+
+Bekannte Grenze: private Images ohne hinterlegte Zugangsdaten im Trivy-Container scheitern auch im zweiten
+Lauf — dann greift der Eintrag aus dem Abschnitt darüber und das Ziel ist wenigstens sichtbar fehlerhaft
+statt abwesend.
+
 ## Ein nie erfolgreich gescanntes Ziel ist unsichtbar, nicht leer (2026-08-28)
 
 Ein fehlgeschlagener Scan behält absichtlich die vorherigen Ergebnisse. Für ein Ziel, das **noch nie**
