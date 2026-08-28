@@ -178,11 +178,21 @@ public class CveMonitorService : Whiskers.Services.FleetBackgroundService, ICveM
                         // returns an empty Findings list with Error set; storing it would wipe the good
                         // previous results (target shows "clean") and make the next successful scan re-report
                         // every existing CVE as new.
-                        if (osResult.Error is null)
+                        if (CveScanOutcome.Decide(prev, osResult) == ScanResultAction.Store
+                            && CveScanOutcome.ShouldNotify(osResult))
                         {
                             var news = DiffFindings(prev, osResult);
                             _store.Set(osResult);
                             if (news.Count > 0) newPerTarget.Add((osResult, news));
+                        }
+                        else if (CveScanOutcome.Decide(prev, osResult) == ScanResultAction.Store)
+                        {
+                            // Same reasoning as the container branch below: never scanned and not stored is
+                            // indistinguishable from clean.
+                            _store.Set(osResult);
+                            _logger.LogWarning(
+                                "OS CVE scan on {Server} failed ({Error}) and there is no earlier result — " +
+                                "recording the failure so the target is not invisible", server.Id, osResult.Error);
                         }
                         else
                         {
@@ -222,11 +232,27 @@ public class CveMonitorService : Whiskers.Services.FleetBackgroundService, ICveM
                                 server.Id, c.Id, c.Name, c.Image, ct);
                             // Keep previous results on scan failure (see OS branch above) to avoid a false
                             // "clean" state and a re-notification storm on the next successful scan.
-                            if (result.Error is null)
+                            if (CveScanOutcome.Decide(prev, result) == ScanResultAction.Store
+                                && CveScanOutcome.ShouldNotify(result))
                             {
                                 var news = DiffFindings(prev, result);
                                 _store.Set(result);
                                 if (news.Count > 0) newPerTarget.Add((result, news));
+                            }
+                            else if (CveScanOutcome.Decide(prev, result) == ScanResultAction.Store)
+                            {
+                                // A target that has NEVER been scanned successfully has no previous result to
+                                // keep, so the old branch stored nothing at all — and a target that is absent
+                                // reads, in every view, exactly like one with no findings. Found on
+                                // 2026-08-28: two running containers on infomaniak had been invisible since
+                                // their image layers went bad, and the only trace was a warning that the log
+                                // rotated away within the hour. Store the failure instead, so the target
+                                // exists and says why it is empty.
+                                _store.Set(result);
+                                _logger.LogWarning(
+                                    "Container CVE scan for {Container} on {Server} failed ({Error}) and there " +
+                                    "is no earlier result — recording the failure so the target is not invisible",
+                                    c.Name, server.Id, result.Error);
                             }
                             else
                             {

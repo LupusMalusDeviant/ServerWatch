@@ -41,6 +41,31 @@ database — a monitoring outage caused by monitoring. So the endpoint says *tha
 `get_cve_summary` (MCP) names *which* target, worst first, where one question is asked at a time and
 cardinality costs nothing. Both halves are needed: a count with no name leaves an operator nowhere to go.
 
+## Ein nie erfolgreich gescanntes Ziel ist unsichtbar, nicht leer (2026-08-28)
+
+Ein fehlgeschlagener Scan behält absichtlich die vorherigen Ergebnisse. Für ein Ziel, das **noch nie**
+erfolgreich gescannt wurde, gibt es aber nichts zu behalten — also wurde gar nichts gespeichert, und das Ziel
+fehlte in jeder Liste. Ein fehlendes Ziel liest sich überall wie eines ohne Befunde.
+
+Im Feld gefunden: Auf infomaniak liefen zehn Container, im Bestand standen acht Ziele. `ghostunnel` und
+`fenrir-sentinel` fehlten, weil ihre lokalen Image-Schichten beschädigt sind — Trivy scheitert dort mit
+`file blobs/sha256/… not found in tar`, dasselbe Image scannt auf drei anderen Servern fehlerfrei. Keiner der
+beiden war dort je erfolgreich gescannt worden, also gab es keinen Vorgänger, also wurde nichts gespeichert.
+**Die Veraltungsmetrik kann das prinzipiell nicht sehen: Was nicht da ist, kann nicht altern.**
+
+`CveScanOutcome.Decide` trennt die zwei Hälften der Regel, und beide sind nötig:
+
+| Lage | Entscheidung | Warum |
+|---|---|---|
+| Scan erfolgreich | `Store` | auch ein Ergebnis ohne Befunde — sonst ist ein sauberes Image von einem ungescannten nicht zu unterscheiden |
+| Fehlgeschlagen, Vorgänger vorhanden | `KeepPrevious` | echte Befunde durch ein leeres Ergebnis zu ersetzen meldet Entwarnung und beim nächsten Erfolg jede CVE neu |
+| Fehlgeschlagen, **kein** Vorgänger | `Store` | sonst ist das Ziel abwesend, und abwesend sieht aus wie sauber |
+
+Ein gespeicherter Fehlschlag wird **nie** als neuer Befund gemeldet (`ShouldNotify`) — das würde jemanden
+wegen eines Scannerproblems anpiepsen. Sichtbar wird er stattdessen über `whiskers_cve_scan_failures{server}`
+und namentlich über `get_cve_summary`, inklusive Grund und der Zahl der noch bekannten Befunde: Ein Fehlschlag
+über alten, echten Daten ist eine andere Lage als einer über gar nichts.
+
 ## Results of a server that was removed (2026-08-27)
 
 `PruneServer` only ever runs for servers that still exist, so the results of a server **deleted from the

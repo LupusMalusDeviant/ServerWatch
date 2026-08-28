@@ -61,6 +61,16 @@ public class CveTools
                           "these look identical to fresh ones apart from their age.");
         }
 
+        // Named, not just counted: a failure count with no target is a number an operator cannot act on.
+        var failed = Whiskers.Services.Cve.CveMetrics.FailedTargets(store.GetAll());
+        if (failed.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Targets whose last scan FAILED — their counts above mean \"unknown\", not \"clean\":");
+            foreach (var f in failed)
+                sb.AppendLine($"  ! {f.ServerId} / {f.Target}: {f.Error} ({f.KnownFindings} finding(s) on record)");
+        }
+
         return sb.ToString();
     }
 

@@ -227,4 +227,71 @@ public class CveMetricsTests
 
         Assert.Empty(stale);
     }
+
+    // ---- targets whose scan failed: absent used to look identical to clean ------------------------------
+
+    private static CveScanResult Failed(string serverId, string container, string error, DateTime scannedAt)
+        => new()
+        {
+            ServerId = serverId, Source = CveSource.Container, ContainerId = container,
+            ContainerName = container, ScannedAt = scannedAt, Error = error
+        };
+
+    [Fact]
+    public void A_target_whose_scan_failed_is_counted_and_not_mistaken_for_clean()
+    {
+        // The 2026-08-28 case: two running containers on infomaniak could not be scanned because their local
+        // image layers were damaged. Neither had ever been scanned successfully, so nothing was stored and
+        // they were absent from every list — which reads exactly like "no findings".
+        var server = Only(CveMetrics.Build(
+        [
+            Target("infomaniak", "caddy", Now, CveSeverity.Low),
+            Failed("infomaniak", "ghostunnel", "not found in tar", Now)
+        ], Interval, Now));
+
+        Assert.Equal(1, server.FailedTargets);
+        // ...and its zero findings must not quietly inflate the "everything is fine" picture
+        Assert.Equal(1, server.BySeverity.Sum(b => b.Count));
+    }
+
+    [Fact]
+    public void A_healthy_fleet_reports_no_failures()
+    {
+        // The other direction: a permanent non-zero here would be ignored within a week.
+        var server = Only(CveMetrics.Build(
+            [Target("local", "web", Now, CveSeverity.Low)], Interval, Now));
+
+        Assert.Equal(0, server.FailedTargets);
+    }
+
+    [Fact]
+    public void The_failed_targets_are_named_with_their_reason()
+    {
+        // A count with no target is a number nobody can act on — the operator needs to know WHICH container
+        // and WHY, because the fix differs (damaged image layer, missing credentials, host unreachable).
+        var failed = CveMetrics.FailedTargets(
+        [
+            Target("infomaniak", "caddy", Now, CveSeverity.Low),
+            Failed("infomaniak", "ghostunnel", "not found in tar", Now),
+            Failed("infomaniak", "fenrir-sentinel", "not found in tar", Now)
+        ]);
+
+        Assert.Equal(2, failed.Count);
+        Assert.Contains(failed, f => f.Target == "ghostunnel" && f.Error.Contains("not found in tar"));
+        Assert.DoesNotContain(failed, f => f.Target == "caddy");
+    }
+
+    [Fact]
+    public void A_failed_target_reports_what_is_still_known_about_it()
+    {
+        // A failure over stale-but-real findings is a different situation from a failure over nothing at all:
+        // the first still has data to act on, the second is a blind spot. The number says which.
+        var withHistory = Failed("s", "c", "host unreachable", Now);
+        withHistory.Findings.Add(new CveFinding { ServerId = "s", CveId = "CVE-2026-1", Package = "openssl" });
+
+        var failed = CveMetrics.FailedTargets([withHistory, Failed("s", "d", "no data", Now)]);
+
+        Assert.Equal(1, failed.Single(f => f.Target == "c").KnownFindings);
+        Assert.Equal(0, failed.Single(f => f.Target == "d").KnownFindings);
+    }
 }

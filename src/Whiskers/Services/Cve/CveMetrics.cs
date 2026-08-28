@@ -10,15 +10,23 @@ namespace Whiskers.Services.Cve;
 /// must have stopped happening.</param>
 /// <param name="OldestDataAge">Age of the least recently scanned target. This is the number that would have
 /// caught the Trivy parse failure.</param>
+/// <param name="FailedTargets">Targets whose last scan failed. Their finding count is not a verdict — it is
+/// the absence of one, and without this number zero findings and zero knowledge look the same.</param>
 public sealed record CveServerMetrics(
     string ServerId,
     IReadOnlyList<(CveSeverity Severity, int Count)> BySeverity,
     int StaleTargets,
-    TimeSpan OldestDataAge);
+    TimeSpan OldestDataAge,
+    int FailedTargets);
 
 /// <summary>One target whose data is old enough that its scan must have stopped happening.</summary>
 /// <param name="Target">Container name, or "host OS" — the thing an operator has to go and look at.</param>
 public sealed record CveStaleTarget(string ServerId, string Target, TimeSpan Age);
+
+/// <summary>One target whose last scan failed.</summary>
+/// <param name="KnownFindings">What is still on record for it — zero here means nothing is known, which is
+/// not the same as nothing being wrong.</param>
+public sealed record CveFailedTarget(string ServerId, string Target, string Error, int KnownFindings);
 
 /// <summary>The whole fleet's picture.</summary>
 /// <param name="PerServer">One entry per server that has any stored results.</param>
@@ -78,6 +86,27 @@ public static class CveMetrics
             .ToList();
     }
 
+    /// <summary>
+    /// The targets whose last scan failed, worst-sounding first — the ones whose emptiness means "we do not
+    /// know", not "nothing found".
+    ///
+    /// <para>Found on 2026-08-28: two running containers on infomaniak could not be scanned because their
+    /// local image layers were damaged, and because neither had ever been scanned successfully there was no
+    /// result to keep — so they were absent from every list rather than present and failing. A missing target
+    /// looks exactly like a clean one. Staleness cannot catch this: what is not there cannot age.</para>
+    /// </summary>
+    public static IReadOnlyList<CveFailedTarget> FailedTargets(IReadOnlyList<CveScanResult> results)
+        => results
+            .Where(r => !string.IsNullOrWhiteSpace(r.Error))
+            .Select(r => new CveFailedTarget(
+                r.ServerId,
+                r.Source == CveSource.Os ? "host OS" : r.ContainerName ?? r.ContainerId ?? "(unnamed)",
+                r.Error!,
+                r.Findings.Count))
+            .OrderBy(t => t.ServerId, StringComparer.Ordinal)
+            .ThenBy(t => t.Target, StringComparer.Ordinal)
+            .ToList();
+
     public static CveFleetMetrics Build(
         IReadOnlyList<CveScanResult> results, TimeSpan scanInterval, DateTime nowUtc)
     {
@@ -95,7 +124,8 @@ public static class CveMetrics
                 g.Count(r => nowUtc - r.ScannedAt > staleAfter),
                 // Max, not average: one target frozen since July among fifty fresh ones is the whole finding,
                 // and an average would bury it under the servers that are working.
-                g.Max(r => Age(r, nowUtc))))
+                g.Max(r => Age(r, nowUtc)),
+                g.Count(r => !string.IsNullOrWhiteSpace(r.Error))))
             .OrderBy(s => s.ServerId, StringComparer.Ordinal)
             .ToList();
 

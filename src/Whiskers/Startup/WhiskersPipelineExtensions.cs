@@ -543,6 +543,14 @@ public static class WhiskersPipelineExtensions
             foreach (var server in cve.PerServer)
                 sb.AppendLine($"whiskers_cve_data_age_seconds{{server=\"{Esc(server.ServerId)}\"}} {server.OldestDataAge.TotalSeconds:F0}");
 
+            // Found on 2026-08-28. A target whose scan fails and that has no earlier result used to be stored
+            // nowhere at all — absent from every list, which reads exactly like a target with no findings.
+            // Staleness cannot see this: what is not there cannot age. This can.
+            sb.AppendLine("# HELP whiskers_cve_scan_failures Targets whose last scan failed. Their zero findings mean \"we do not know\", not \"nothing found\" — alert on this above zero.");
+            sb.AppendLine("# TYPE whiskers_cve_scan_failures gauge");
+            foreach (var server in cve.PerServer)
+                sb.AppendLine($"whiskers_cve_scan_failures{{server=\"{Esc(server.ServerId)}\"}} {server.FailedTargets}");
+
             sb.AppendLine("# HELP whiskers_cve_stale_targets Targets whose data is older than two scan intervals — a scanner that has stopped, not a blip. Alert on this being above zero.");
             sb.AppendLine("# TYPE whiskers_cve_stale_targets gauge");
             foreach (var server in cve.PerServer)
