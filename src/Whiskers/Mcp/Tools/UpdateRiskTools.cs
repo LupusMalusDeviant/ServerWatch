@@ -33,6 +33,71 @@ public class UpdateRiskTools
         return Render(report);
     }
 
+    [McpToolLevel(McpPermissionLevels.Read)]
+    [McpServerTool, Description(
+        "Who else a change to this container touches: which containers get recreated with it, which depend " +
+        "on it, which it depends on, and whether the operation would cut the connection Whiskers is using " +
+        "to perform it. Reads compose labels only — no pull, no probe. Useful before any restart, update or " +
+        "stop, not just updates.")]
+    public static async Task<string> GetBlastRadius(
+        IHttpContextAccessor httpContextAccessor,
+        IMcpPermissionService permissionService,
+        Whiskers.Services.Docker.IDockerService docker,
+        Whiskers.Services.ServerConfig.IServerConfigService serverConfig,
+        [Description("Server id, e.g. 'local' or 'infomaniak'.")] string serverId,
+        [Description("Container name or id prefix.")] string container,
+        [Description("True when the change touches the compose project's configuration — a new or edited " +
+                     "override file, a changed environment. Then EVERY service in the project is recreated, " +
+                     "not just this one.")] bool changesProjectConfig = false)
+    {
+        var denied = McpPermissionCheck.CheckAccess(httpContextAccessor, permissionService, "get_blast_radius");
+        if (denied != null) return denied;
+
+        var all = await docker.ListAllContainersAsync();
+        var onServer = all.Where(c => string.Equals(c.ServerId, serverId, StringComparison.OrdinalIgnoreCase))
+                          .ToList();
+        var target = onServer.FirstOrDefault(c =>
+            string.Equals(c.Name, container, StringComparison.OrdinalIgnoreCase) ||
+            c.Id.StartsWith(container, StringComparison.OrdinalIgnoreCase));
+
+        if (target is null) return $"No container '{container}' on server '{serverId}'.";
+
+        var remote = serverConfig.GetServer(serverId)?.ConnectionType == Whiskers.Models.ConnectionType.TCP;
+        return RenderRadius(BlastRadiusAssessor.Assess(target, onServer, remote, changesProjectConfig));
+    }
+
+    internal static string RenderRadius(BlastRadius r)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Blast radius for {r.Target}");
+
+        if (r.SeversOwnPath)
+        {
+            sb.AppendLine();
+            sb.AppendLine("  ** THIS CUTS THE CONNECTION IT TRAVELS THROUGH **");
+            sb.AppendLine("  Whiskers reaches this server through a proxy container in the same project. Run " +
+                          "the operation detached (systemd-run / nohup), or it dies mid-flip and the server " +
+                          "is out of reach from here.");
+        }
+
+        sb.AppendLine();
+        if (r.Affected.Count == 0)
+            sb.AppendLine("  No other container in this project is affected.");
+        else
+        {
+            sb.AppendLine($"  {r.Affected.Count} other container(s) affected:");
+            foreach (var a in r.Affected)
+                sb.AppendLine($"    [{a.Kind}] {a.Name} — {a.WhatHappens}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("  NOT visible from here:");
+        foreach (var b in r.BlindSpots)
+            sb.AppendLine($"    - {b}");
+
+        return sb.ToString();
+    }
+
     internal static string Render(UpdateRiskReport r)
     {
         var sb = new StringBuilder();

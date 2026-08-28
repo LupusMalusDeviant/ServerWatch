@@ -33,6 +33,7 @@ public class ImageUpdateModuleTests
         Assert.Equal("image-updates", module.Id);
         Assert.Empty(module.NavItems);
         Assert.Equal(typeof(Whiskers.Mcp.Tools.UpdateRiskTools), Assert.Single(module.McpToolTypes));
+        // One type, two tools on it: assess_update_risk (GAP-6) and get_blast_radius (GAP-7).
     }
 
     // --- Registration + no-op gate -----------------------------------------------------------------------

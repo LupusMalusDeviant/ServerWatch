@@ -108,6 +108,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 | Tool | Level | Description |
 |---|---|---|
 | `assess_update_risk` | read | Assess what updating one container's image would change, BEFORE recreating anything. Compares what the running image and the candidate image declare — entrypoint, user, exposed ports, expected volumes, healthcheck, base OS — and counts which CVEs the update actually closes. Pulls the candidate image (starts and restarts nothing). Read-only with respect to running containers. |
+| `get_blast_radius` | read | Who else a change to this container touches: which containers get recreated with it, which depend on it, which it depends on, and whether the operation would cut the connection Whiskers is using to perform it. Reads compose labels only — no pull, no probe. Useful before any restart, update or stop, not just updates. |
 
 ## Module `logmonitor`
 
@@ -144,7 +145,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 
 | Level | Tools |
 |---|---|
-| read | 43 |
+| read | 44 |
 | write | 33 |
 | admin | 3 |
-| **total** | **79** |
+| **total** | **80** |
