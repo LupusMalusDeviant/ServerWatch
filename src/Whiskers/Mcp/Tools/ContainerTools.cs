@@ -207,6 +207,7 @@ public class ContainerTools
         IDockerService docker,
         IImageUpdateStore updateStore,
         IAuditLogService auditLog,
+        Whiskers.Services.AutoUpdate.IAutoUpdateService autoUpdate,
         [Description("Container ID or name")] string containerId,
         [Description("Server ID")] string? serverId = null)
     {
@@ -223,6 +224,20 @@ public class ContainerTools
         var messages = new List<string>();
         var progress = new Progress<string>(msg => messages.Add(msg));
         var (actor, actorType) = IAuditLogService.GetActorFromHttpContext(httpContextAccessor.HttpContext, permissionService);
+
+        // Capture the way back BEFORE the recreate — the same snapshot the Dashboard's update button and the
+        // auto-updater take. This path did not, so every update driven by an agent or a script left no
+        // rollback at all: the one caller least able to notice, and least able to fix it by hand. Found on
+        // 2026-08-28 by checking UpdateRollbacks after an update that reported success.
+        try { await autoUpdate.CaptureSnapshotAsync(container); }
+        catch (Exception ex)
+        {
+            // Not fatal — but it must be said. An update that silently lost its way back looks exactly like
+            // one that kept it.
+            messages.Add($"WARNING: could not capture a rollback snapshot ({ex.Message}). " +
+                         "The update will proceed, but it cannot be rolled back from here.");
+        }
+
         string newId;
         try
         {
