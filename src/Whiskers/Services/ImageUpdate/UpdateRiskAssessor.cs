@@ -29,7 +29,10 @@ public sealed record RiskFinding(RiskLevel Level, string What, string WhyItMatte
 public sealed record UpdateRisk(
     RiskLevel Level,
     IReadOnlyList<RiskFinding> Findings,
-    int CvesClosed,
+    /// <summary>How many CVEs the update actually closes, or null when that could not be determined. Null is
+    /// NOT zero: reporting an unscanned candidate as "closes 0" would argue against an update on the strength
+    /// of a measurement nobody made.</summary>
+    int? CvesClosed,
     IReadOnlyList<string> BlindSpots);
 
 /// <summary>
@@ -50,7 +53,7 @@ public static class UpdateRiskAssessor
 {
     public static UpdateRisk Assess(
         ImageContract running, ImageContract candidate,
-        string? currentTag, string? candidateTag, int cvesClosed)
+        string? currentTag, string? candidateTag, int? cvesClosed)
     {
         var findings = new List<RiskFinding>();
 
@@ -118,7 +121,11 @@ public static class UpdateRiskAssessor
         findings.AddRange(TagFindings(currentTag, candidateTag));
 
         var level = findings.Count == 0 ? RiskLevel.None : findings.Max(f => f.Level);
-        return new UpdateRisk(level, findings, cvesClosed, BlindSpots(candidateTag));
+        var blind = BlindSpots(candidateTag).ToList();
+        if (cvesClosed is null)
+            blind.Insert(0, "How many vulnerabilities this actually closes — the candidate image was not " +
+                            "scanned, so the benefit side of the decision is missing.");
+        return new UpdateRisk(level, findings, cvesClosed, blind);
     }
 
     private static IEnumerable<RiskFinding> TagFindings(string? currentTag, string? candidateTag)

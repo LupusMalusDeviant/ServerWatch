@@ -217,6 +217,9 @@ internal sealed class FakeDocker : IDockerService
     public Task<(string State, int ExitCode, bool OomKilled)> InspectContainerStateAsync(string containerId, string? serverId = null) => throw new NotSupportedException();
     public Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<Dictionary<string, ServerSystemInfo>> GetAllServerSystemInfoAsync() => throw new NotSupportedException();
+    public Task<Whiskers.Services.ImageUpdate.ImageContract?> GetImageContractAsync(string imageRef, string? serverId = null)
+        => Task.FromResult<Whiskers.Services.ImageUpdate.ImageContract?>(null);
+
     public Task<string?> GetImageDigestAsync(string imageRef, string? serverId = null) => throw new NotSupportedException();
     public Task<string> RecreateContainerAsync(string containerId, string? serverId = null, IProgress<string>? progress = null) => throw new NotSupportedException();
     public Task<List<KeyValuePair<string, string>>> GetContainerEnvAsync(string containerId, string? serverId = null) => throw new NotSupportedException();

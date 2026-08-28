@@ -63,6 +63,8 @@ public static class McpPermissionLevels
     {
         // Read tools
         ["list_containers"] = Read,
+        // GAP-6: reads image metadata and pulls the candidate image; starts and restarts nothing.
+        ["assess_update_risk"] = Read,
         ["get_container_details"] = Read,
         ["get_container_logs"] = Read,
         ["list_servers"] = Read,

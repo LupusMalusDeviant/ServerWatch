@@ -24,7 +24,8 @@ public sealed class ImageUpdateModule : IWhiskersModule
     public bool EnabledByDefault => true;
     public IReadOnlyList<string> DependsOn => Array.Empty<string>();
     public IReadOnlyList<NavItem> NavItems => Array.Empty<NavItem>();
-    public IReadOnlyList<Type> McpToolTypes => Array.Empty<Type>();
+    // GAP-6: "what would this update change?" belongs to the module that knows about images.
+    public IReadOnlyList<Type> McpToolTypes { get; } = new[] { typeof(Whiskers.Mcp.Tools.UpdateRiskTools) };
     public Task InitializeAsync(IServiceProvider sp, CancellationToken ct) => Task.CompletedTask;
 
     public void ConfigureServices(IServiceCollection services, IConfiguration config)
@@ -33,6 +34,8 @@ public sealed class ImageUpdateModule : IWhiskersModule
         // rotating primary handler so a long-lived resolution doesn't pin a stale DNS answer; IRegistryClient
         // stays the shared-cache singleton, forwarded to the typed client.
         services.Configure<ImageUpdateSettings>(config.GetSection("ImageUpdate"));
+        services.AddSingleton<Whiskers.Services.ImageUpdate.IUpdateRiskService,
+                              Whiskers.Services.ImageUpdate.UpdateRiskService>();
         services.AddHttpClient<RegistryClient>()
             .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(15))
             .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler

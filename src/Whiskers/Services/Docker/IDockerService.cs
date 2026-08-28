@@ -24,6 +24,10 @@ public interface IDockerService
     Task<ServerSystemInfo> GetServerSystemInfoAsync(string? serverId = null, CancellationToken ct = default);
     Task<Dictionary<string, ServerSystemInfo>> GetAllServerSystemInfoAsync();
     Task<string?> GetImageDigestAsync(string imageRef, string? serverId = null);
+
+    /// <summary>What an image declares about how it runs — for measuring update risk before recreating
+    /// anything (GAP-6). Null when the image cannot be inspected.</summary>
+    Task<ImageUpdate.ImageContract?> GetImageContractAsync(string imageRef, string? serverId = null);
     Task<string> RecreateContainerAsync(string containerId, string? serverId = null, IProgress<string>? progress = null);
     /// <summary>The container's log-driver configuration and log file path, or null when Docker reports
     /// none. Used by the log-hygiene inventory (Plan-0007 WP3).</summary>

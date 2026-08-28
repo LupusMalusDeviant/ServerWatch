@@ -103,6 +103,12 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 |---|---|---|
 | `list_git_deploy_apps` | read | List the applications Whiskers deploys from Git: repository, branch, compose path, target server, and the outcome, time and commit of the last deploy. Read-only — this cannot start a deploy. |
 
+## Module `image-updates`
+
+| Tool | Level | Description |
+|---|---|---|
+| `assess_update_risk` | read | Assess what updating one container's image would change, BEFORE recreating anything. Compares what the running image and the candidate image declare — entrypoint, user, exposed ports, expected volumes, healthcheck, base OS — and counts which CVEs the update actually closes. Pulls the candidate image (starts and restarts nothing). Read-only with respect to running containers. |
+
 ## Module `logmonitor`
 
 | Tool | Level | Description |
@@ -138,7 +144,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 
 | Level | Tools |
 |---|---|
-| read | 42 |
+| read | 43 |
 | write | 33 |
 | admin | 3 |
-| **total** | **78** |
+| **total** | **79** |

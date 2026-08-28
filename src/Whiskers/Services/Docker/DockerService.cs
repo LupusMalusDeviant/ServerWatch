@@ -110,6 +110,9 @@ public class DockerService : IDockerService
     public Task<string?> GetImageDigestAsync(string imageRef, string? serverId = null)
         => _images.GetImageDigestAsync(imageRef, serverId);
 
+    public Task<ImageUpdate.ImageContract?> GetImageContractAsync(string imageRef, string? serverId = null)
+        => _images.GetImageContractAsync(imageRef, serverId);
+
     // === Networks ===
 
     public Task<IList<NetworkInfo>> ListNetworksAsync(string? serverId = null)

@@ -72,6 +72,38 @@ internal sealed class ImageOperations
         return (imageName, "latest");
     }
 
+    /// <summary>
+    /// The part of an image a running container depends on — entrypoint, user, ports, volumes, healthcheck,
+    /// OS. Read before an update so the risk can be measured instead of guessed (GAP-6).
+    /// </summary>
+    public async Task<ImageUpdate.ImageContract?> GetImageContractAsync(string imageRef, string? serverId = null)
+    {
+        try
+        {
+            var inspect = await _connectionManager.ExecuteGuardedAsync(
+                serverId, c => c.Images.InspectImageAsync(imageRef),
+                singleFlightKey: $"imagecontract:{imageRef}");
+
+            var cfg = inspect.Config;
+            return new ImageUpdate.ImageContract(
+                cfg?.Entrypoint?.ToList() ?? [],
+                cfg?.Cmd?.ToList() ?? [],
+                string.IsNullOrWhiteSpace(cfg?.User) ? null : cfg.User,
+                new HashSet<string>(cfg?.ExposedPorts?.Keys ?? []),
+                new HashSet<string>(cfg?.Volumes?.Keys ?? []),
+                string.IsNullOrWhiteSpace(cfg?.WorkingDir) ? null : cfg.WorkingDir,
+                cfg?.Healthcheck?.Test is { Count: > 0 },
+                inspect.Os);
+        }
+        catch (Exception ex)
+        {
+            // Null, not an empty contract: an empty one would compare as "everything was removed" and turn a
+            // missing image into a fleet of high-risk findings.
+            _logger.LogWarning(ex, "Could not inspect image {Image} on {Server}", imageRef, serverId ?? "default");
+            return null;
+        }
+    }
+
     public async Task<string?> GetImageDigestAsync(string imageRef, string? serverId = null)
     {
         try

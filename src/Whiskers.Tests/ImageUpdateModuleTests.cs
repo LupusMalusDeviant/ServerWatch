@@ -24,12 +24,15 @@ public class ImageUpdateModuleTests
     // --- Module metadata ---------------------------------------------------------------------------------
 
     [Fact]
-    public void Has_no_nav_and_no_mcp_tools()
+    public void Has_no_nav_but_carries_the_update_risk_tool()
     {
+        // GAP-6 (2026-08-28): the module gained exactly one tool — "what would this update change?" belongs
+        // where the knowledge about images already lives. Still no nav entry: the assessment is a question you
+        // ask about one container, not a page you visit.
         var module = new ImageUpdateModule();
         Assert.Equal("image-updates", module.Id);
         Assert.Empty(module.NavItems);
-        Assert.Empty(module.McpToolTypes);
+        Assert.Equal(typeof(Whiskers.Mcp.Tools.UpdateRiskTools), Assert.Single(module.McpToolTypes));
     }
 
     // --- Registration + no-op gate -----------------------------------------------------------------------
