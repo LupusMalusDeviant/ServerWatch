@@ -19,4 +19,5 @@ public sealed class NoopImageUpdateStore : IImageUpdateStore
     public IReadOnlyList<ImageUpdateInfo> GetAll() => Array.Empty<ImageUpdateInfo>();
     public void Remove(string containerId, string? serverId = null) { }
     public void Clear() { }
+    public Task SaveAsync() => Task.CompletedTask;
 }

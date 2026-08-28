@@ -140,8 +140,31 @@ public class ImageUpdateChecker : Whiskers.Services.FleetBackgroundService
             // Broadcast to UI
             await hubContext.Clients.All.SendAsync("ImageUpdatesChanged", ct);
 
-            _logger.LogInformation("Image update check complete: {Total} containers, {Updates} updates available",
-                containers.Count, newUpdates.Count);
+            await _store.SaveAsync();
+
+            // Coverage, not just a count. "21 containers" used to be printed whether the fleet had 21 or 46,
+            // and half of them being unreachable at that moment looked exactly like a complete check. And the
+            // second number said "updates available" while counting only the ones that appeared THIS cycle —
+            // so a fleet with twenty long-known updates still reported "0 updates available".
+            var expected = allServers
+                .Where(s => s.ConnectionType != Whiskers.Models.ConnectionType.Kubernetes)
+                .Select(s => s.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var seen = containers.Select(c => c.ServerId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var missing = expected.Except(seen, StringComparer.OrdinalIgnoreCase).ToList();
+            var pending = _store.GetAllPendingUpdates().Count;
+
+            if (missing.Count > 0)
+                _logger.LogWarning(
+                    "Image update check covered {Seen} of {Total} servers — no containers came back from " +
+                    "{Missing}. {Pending} update(s) known ({New} new this cycle), but this answer is " +
+                    "INCOMPLETE: an unchecked server looks exactly like one with nothing to update.",
+                    seen.Count, expected.Count, string.Join(", ", missing), pending, newUpdates.Count);
+            else
+                _logger.LogInformation(
+                    "Image update check complete: {Containers} containers across all {Servers} servers, " +
+                    "{Pending} update(s) known ({New} new this cycle)",
+                    containers.Count, expected.Count, pending, newUpdates.Count);
         }
         catch (Exception ex)
         {

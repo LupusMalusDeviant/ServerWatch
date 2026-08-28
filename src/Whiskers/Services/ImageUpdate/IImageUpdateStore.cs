@@ -14,4 +14,7 @@ public interface IImageUpdateStore
     IReadOnlyList<ImageUpdateInfo> GetAll();
     void Remove(string containerId, string? serverId = null);
     void Clear();
+
+    /// <summary>Persists the current state. Called after each check cycle.</summary>
+    Task SaveAsync();
 }

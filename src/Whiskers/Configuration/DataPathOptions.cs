@@ -67,6 +67,11 @@ public sealed class DataPathOptions
     // --- JSON config stores ---
     public string ApiKeysJson => P("api-keys.json");
     public string McpPermissionsJson => P("mcp-permissions.json");
+
+    /// <summary>What the image-update checker knows. Persisted since 2026-08-28: the store used to live only
+    /// in memory, so every restart wiped it and — with a six-hour check interval — Whiskers spent hours
+    /// answering "no updates" when it simply had not looked yet.</summary>
+    public string ImageUpdatesJson => P("image-updates.json");
     public string ServersJson => P("servers.json");
     public string VaultJson => P("vault.json");
     public string RolesJson => P("roles.json");
