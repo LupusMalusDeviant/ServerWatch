@@ -19,6 +19,7 @@ internal sealed class SystemInfoOperations
     private readonly ContainerOperations _containerOperations;
     private readonly ILogger<DockerService> _logger;
     private readonly MemoryCache _statsCache;
+    private readonly Observability.IFleetSnapshotCache _snapshots;
 
     public SystemInfoOperations(
         IDockerConnectionManager connectionManager,
@@ -26,7 +27,8 @@ internal sealed class SystemInfoOperations
         IPrometheusMetricsSource prometheusMetrics,
         ContainerOperations containerOperations,
         ILogger<DockerService> logger,
-        MemoryCache statsCache)
+        MemoryCache statsCache,
+        Observability.IFleetSnapshotCache snapshots)
     {
         _connectionManager = connectionManager;
         _serverConfigService = serverConfigService;
@@ -34,6 +36,7 @@ internal sealed class SystemInfoOperations
         _containerOperations = containerOperations;
         _logger = logger;
         _statsCache = statsCache;
+        _snapshots = snapshots;
     }
 
     private async Task<DockerClient> GetClient(string? serverId)
@@ -151,13 +154,25 @@ internal sealed class SystemInfoOperations
         // Bound each server's reachability probe so one dead host (whose retrying executor can take up
         // to ~60s) can't stall the whole dashboard load — it's marked unreachable after 8s instead.
         var perServerTimeout = TimeSpan.FromSeconds(8);
+
+        // Every probe feeds the cache, whichever loop or page asked for it. The background loops sweep the
+        // fleet every 30 seconds anyway, so by the time somebody opens a page the answer is already here —
+        // the dashboard used to ask again from scratch and show two seconds of "nicht erreichbar" while it
+        // waited for what the building already knew.
+        void Remember(string id, ServerSystemInfo info)
+        {
+            if (info.IsReachable) _snapshots.Put(id, info);
+        }
+
         var tasks = servers.Select(async s =>
         {
             // Cancel rather than abandon — see ContainerOperations.ListAllContainersDetailedAsync.
             using var timeout = new CancellationTokenSource(perServerTimeout);
             try
             {
-                return (s.Id, info: await GetServerSystemInfoAsync(s.Id, timeout.Token));
+                var probed = await GetServerSystemInfoAsync(s.Id, timeout.Token);
+                Remember(s.Id, probed);
+                return (s.Id, info: probed);
             }
             catch (OperationCanceledException) when (timeout.IsCancellationRequested)
             {

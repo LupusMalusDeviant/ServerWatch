@@ -24,6 +24,7 @@ public class DockerService : IDockerService
         IDockerConnectionManager connectionManager,
         IServerConfigService serverConfigService,
         IPrometheusMetricsSource prometheusMetrics,
+        Whiskers.Services.Observability.IFleetSnapshotCache snapshots,
         ILogger<DockerService> logger,
         // F8: optional last param (test seams unchanged) — registry credentials for authenticated
         // pulls of UI-managed private registries.
@@ -43,7 +44,7 @@ public class DockerService : IDockerService
         _lifecycle = new ContainerLifecycleOperations(connectionManager, _images, logger);
         _networks = new NetworkOperations(connectionManager, serverConfigService);
         _hostShell = new HostShellOperations(connectionManager, statsCache);
-        _systemInfo = new SystemInfoOperations(connectionManager, serverConfigService, prometheusMetrics, _containers, logger, statsCache);
+        _systemInfo = new SystemInfoOperations(connectionManager, serverConfigService, prometheusMetrics, _containers, logger, statsCache, snapshots);
     }
 
     // === Containers ===

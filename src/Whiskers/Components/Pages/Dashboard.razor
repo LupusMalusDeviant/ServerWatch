@@ -13,6 +13,7 @@
 @inject Whiskers.Services.AuditLog.IAuditLogService AuditLog
 @inject Whiskers.Services.Workloads.IWorkloadProviderFactory WorkloadFactory
 @inject Whiskers.Services.Observability.ILoopSuspensionService Suspension
+@inject Whiskers.Services.Observability.IFleetSnapshotCache Snapshots
 @inject IStringLocalizer<SharedResource> L
 @implements IDisposable
 @using Whiskers.Services.Observability
@@ -185,6 +186,16 @@
                 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="ml-2">
                     @L["Dashboard_ServerHeader_Info", sInfoHeader.OperatingSystem, sInfoHeader.CpuCount, FormatBytes(sInfoHeader.MemoryTotalBytes)]
                 </MudText>
+                @* Shown from the cache until the live probe lands. Saying so is not a detail: a reading from
+                   thirty seconds ago and one from now look identical, and only one of them is evidence about
+                   the server right now. *@
+                @if (_infoAge.TryGetValue(serverGroup.ServerId, out var cachedAge))
+                {
+                    <MudTooltip Text="@($"Aus dem Zwischenspeicher, {cachedAge.TotalSeconds:F0} s alt — wird gerade aktualisiert")">
+                        <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Small"
+                                 Style="color:rgba(255,255,255,0.35); margin-left:4px;" />
+                    </MudTooltip>
+                }
                 var cveSum = CveStore.SummarizeServer(serverGroup.ServerId);
                 if (cveSum.CriticalCount + cveSum.HighCount > 0)
                 {
@@ -462,6 +473,10 @@
 
     // Plan-0005 WP5.2. Read straight from the service on each render rather than cached: a pause set on the
     // servers page a moment ago must show here without a refresh, and reading it costs a dictionary lookup.
+    /// <summary>How old each cached reading is, for the servers still shown from the cache. Cleared as soon
+    /// as a live probe lands — an age label that outlives the cached value would be its own small lie.</summary>
+    private Dictionary<string, TimeSpan> _infoAge = new();
+
     private IReadOnlyList<LoopSuspension> _pausedServers => Suspension.Current();
     private int _serverCount => ServerConfigService.GetEnabledServers().Count;
 
@@ -525,6 +540,13 @@
         _showFirstServerCard = _role >= AppRole.Admin &&
             !ServerConfigService.GetServers().Any(s => s.ConnectionType != Whiskers.Models.ConnectionType.Local);
 
+        // Phase 0: whatever the background loops already learned. They sweep the fleet every 30 seconds, so
+        // the answer is almost always here before the page is — painting from it turns a two-second wait into
+        // none. The age travels with it (see _infoAge) because a cached number shown as a current one is the
+        // confusion this whole strand exists to remove.
+        _serverInfos = Snapshots.GetAll().ToDictionary(kv => kv.Key, kv => kv.Value.Info);
+        _infoAge = Snapshots.GetAll().ToDictionary(kv => kv.Key, kv => kv.Value.Age);
+
         // Phase 1: Load container list fast (no stats yet)
         await LoadContainerList();
         _loading = false;
@@ -540,7 +562,11 @@
         // Phase 3: Load server info in background
         _ = Task.Run(async () =>
         {
-            try { _serverInfos = await DockerService.GetAllServerSystemInfoAsync(); }
+            try
+            {
+                _serverInfos = await DockerService.GetAllServerSystemInfoAsync();
+                _infoAge.Clear();   // freshly probed — no age to disclose
+            }
             catch { }
             await InvokeAsync(StateHasChanged);
         });

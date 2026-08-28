@@ -163,6 +163,9 @@ public static class WhiskersHostingExtensions
         builder.Services.AddSingleton<Whiskers.Services.Observability.Outcomes.IActionOutcomeService,
             Whiskers.Services.Observability.Outcomes.ActionOutcomeService>();
         builder.Services.AddHostedService<Whiskers.Services.Observability.Outcomes.ActionOutcomeSweeper>();
+        // Last known reading per server, so a page paints from what the loops already learned instead of
+        // asking the whole fleet again while the user waits.
+        builder.Services.AddSingleton<Whiskers.Services.Observability.IFleetSnapshotCache, Whiskers.Services.Observability.FleetSnapshotCache>();
         builder.Services.AddSingleton<Whiskers.Services.Observability.ILoopSuspensionService, Whiskers.Services.Observability.LoopSuspensionService>();
         // Access-path detection for the log scan (Plan-0007 WP1). The self-host set is resolved once at
         // registration: which servers can hold OUR container is a property of the fleet configuration.
