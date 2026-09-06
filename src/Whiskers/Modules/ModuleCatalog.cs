@@ -25,6 +25,7 @@ public static class ModuleCatalog
         new ImageUpdate.ImageUpdateModule(),
         new Agent.AgentModule(),
         new GitDeploy.GitDeployModule(),
+        new Dns.DnsModule(),
         // Real modules are appended above as features are extracted (Terminal was the first pilot).
         // The minimal example module (disabled by default) — living documentation for the module contract.
         new HelloWorld.HelloWorldModule(),

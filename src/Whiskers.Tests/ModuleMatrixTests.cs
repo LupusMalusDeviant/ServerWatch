@@ -29,7 +29,7 @@ public class ModuleMatrixTests
         foreach (var id in new[]
                  {
                      "terminal", "notifications", "scheduler", "logmonitor", "volumebackups", "webhooks",
-                     "host-management", "deployment", "cve", "cloud-control", "image-updates", "agent",
+                     "host-management", "deployment", "cve", "cloud-control", "image-updates", "agent", "dns",
                  })
             Assert.Contains(id, ids);
         Assert.DoesNotContain("hello-world", ids); // EnabledByDefault = false

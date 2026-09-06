@@ -24,6 +24,7 @@
 @inject IOptionsMonitor<Whiskers.Configuration.MetricAlertSettings> MetricAlertOptions
 @inject IOptionsMonitor<Whiskers.Configuration.ImageUpdateSettings> ImageUpdateOptions
 @inject IOptionsMonitor<Whiskers.Configuration.AiChatSettings> AiChatOptions
+@inject IOptionsMonitor<Whiskers.Configuration.DnsSettings> DnsOptions
 @inject IOptionsMonitor<Whiskers.Configuration.TelegramSettings> TelegramOptions
 @inject IOptionsMonitor<Whiskers.Configuration.NtfySettings> NtfyOptions
 @inject IOptionsMonitor<Whiskers.Configuration.DiscordSettings> DiscordOptions
@@ -294,6 +295,45 @@ else
         </MudGrid>
         <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="SaveTerminal"
                    StartIcon="@Icons.Material.Filled.Save" Class="mt-3">@L["Settings_Button_SaveTerminal"]</MudButton>
+    </MudExpansionPanel>
+    }
+
+    @* DNS provider (Modules/Dns): one global token for zone records; hidden when the module is off. *@
+    @if (ModuleRegistry.IsEnabled("dns"))
+    {
+    <MudExpansionPanel Text="DNS (Infomaniak)" Icon="@Icons.Material.Filled.Language">
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            Zugang zur DNS-API des Anbieters für die MCP-Werkzeuge <code>list_dns_records</code>, <code>set_dns_record</code> und <code>delete_dns_record</code>.
+            Infomaniak: Token unter <em>Manager → Entwickler → API-Tokens</em> mit Berechtigung <em>domain</em> anlegen.
+            Das Token wird nur hier gespeichert, nie in Antworten oder Protokollen ausgegeben.
+        </MudAlert>
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudSelect T="string" @bind-Value="_dnsProvider" Label="Anbieter" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("infomaniak")">Infomaniak</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudNumericField @bind-Value="_dnsDefaultTtl" Label="Standard-TTL (Sekunden)" Min="60" Max="86400" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField Value="@DnsTokenStatus" ReadOnly="true" Label="Token-Status" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_dnsApiToken" Label="API-Token" Variant="Variant.Outlined" Margin="Margin.Dense" InputType="InputType.Password"
+                              HelperText="Leer lassen, um das gespeicherte Token zu behalten." />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_dnsAllowedZones" Label="Erlaubte Zonen (kommagetrennt, leer = alle)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Placeholder="lupusmalus.dev, example.org" HelperText="Die Werkzeuge dürfen nur diese Zonen lesen und ändern." />
+            </MudItem>
+        </MudGrid>
+        <MudStack Row="true" Class="mt-3" Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="SaveDns"
+                       StartIcon="@Icons.Material.Filled.Save">DNS speichern</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ClearDnsToken" Disabled="@(!_dnsHasToken)"
+                       StartIcon="@Icons.Material.Filled.DeleteForever">Token entfernen</MudButton>
+        </MudStack>
     </MudExpansionPanel>
     }
 
@@ -640,6 +680,10 @@ else
     private string _cveTrivy = "aquasec/trivy:latest"; private bool _cveNotify = true; private string _cveSeverity = "High"; private int _cveMaxScans = 3;
     private bool _iuEnabled = true; private int _iuInterval = 6; private bool _iuNotify = true;
     private bool _termEnabled = true; private string _termShell = "/bin/bash"; private int _termMaxSessions = 5; private int _termIdle = 30;
+    private string _dnsProvider = "infomaniak"; private string _dnsApiToken = ""; private string _dnsAllowedZones = ""; private int _dnsDefaultTtl = 300; private bool _dnsHasToken;
+    // The stored token is never bound into the page — only whether one exists and its last characters.
+    private string DnsTokenStatus => _dnsHasToken ? $"hinterlegt (…{_dnsTokenTail})" : "kein Token hinterlegt";
+    private string _dnsTokenTail = "";
     private bool _aiEnabled; private string _aiProvider = "openai"; private string _aiModel = ""; private string _aiApiUrl = ""; private string _aiApiKey = "";
     // Additional notification channels
     private bool _tgEnabled; private string _tgToken = ""; private string _tgChat = "";
@@ -692,6 +736,7 @@ else
         _iuEnabled = iu.Enabled; _iuInterval = iu.CheckIntervalHours; _iuNotify = iu.NotifyOnUpdate;
         var t = TerminalOptions.CurrentValue;
         _termEnabled = t.Enabled; _termShell = t.DefaultShell; _termMaxSessions = t.MaxSessions; _termIdle = t.IdleTimeoutMinutes;
+        LoadDns();
         var ai = AiChatOptions.CurrentValue;
         _aiEnabled = ai.Enabled; _aiProvider = ai.Provider; _aiModel = ai.Model; _aiApiUrl = ai.ApiUrl ?? ""; _aiApiKey = ai.ApiKey;
         var tg = TelegramOptions.CurrentValue; _tgEnabled = tg.Enabled; _tgToken = tg.BotToken; _tgChat = tg.ChatId;
@@ -778,6 +823,57 @@ else
         });
         await Audit("terminal");
         Snackbar.Add(L["Settings_Snackbar_TerminalSaved"].Value, Severity.Success);
+    }
+
+    private void LoadDns()
+    {
+        var dns = DnsOptions.CurrentValue;
+        _dnsProvider = string.IsNullOrWhiteSpace(dns.Provider) ? "infomaniak" : dns.Provider;
+        _dnsDefaultTtl = dns.DefaultTtl <= 0 ? 300 : dns.DefaultTtl;
+        _dnsAllowedZones = string.Join(", ", dns.AllowedZones ?? new());
+        _dnsHasToken = dns.IsConfigured;
+        _dnsTokenTail = _dnsHasToken && dns.ApiToken.Length >= 4 ? dns.ApiToken[^4..] : "";
+        _dnsApiToken = "";
+    }
+
+    private async Task SaveDns()
+    {
+        var current = DnsOptions.CurrentValue;
+        // Empty input keeps the stored token; the field is write-only by design (see DnsTokenStatus).
+        var token = string.IsNullOrWhiteSpace(_dnsApiToken) ? current.ApiToken : _dnsApiToken.Trim();
+        var zones = (_dnsAllowedZones ?? "")
+            .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(z => z.TrimEnd('.').ToLowerInvariant())
+            .Distinct()
+            .ToList();
+
+        await AppSettings.SaveSectionAsync(DnsSettings.SectionName, new DnsSettings
+        {
+            Provider = string.IsNullOrWhiteSpace(_dnsProvider) ? "infomaniak" : _dnsProvider,
+            ApiToken = token,
+            AllowedZones = zones,
+            DefaultTtl = Math.Clamp(_dnsDefaultTtl, 60, 86400),
+        });
+        await Audit("dns");
+        _dnsApiToken = "";
+        _dnsHasToken = !string.IsNullOrWhiteSpace(token);
+        _dnsTokenTail = _dnsHasToken && token.Length >= 4 ? token[^4..] : "";
+        Snackbar.Add("DNS-Einstellungen gespeichert", Severity.Success);
+    }
+
+    private async Task ClearDnsToken()
+    {
+        var current = DnsOptions.CurrentValue;
+        await AppSettings.SaveSectionAsync(DnsSettings.SectionName, new DnsSettings
+        {
+            Provider = current.Provider,
+            ApiToken = "",
+            AllowedZones = current.AllowedZones,
+            DefaultTtl = current.DefaultTtl,
+        });
+        await Audit("dns");
+        _dnsApiToken = ""; _dnsHasToken = false; _dnsTokenTail = "";
+        Snackbar.Add("DNS-Token entfernt", Severity.Info);
     }
 
     private async Task SaveAiChat()

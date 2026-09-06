@@ -175,6 +175,12 @@ public static class McpPermissionLevels
         ["hetzner_disable_backups"] = Write,
         ["hetzner_change_server_type"] = Write,
         ["hetzner_delete_snapshot"] = Write,
+
+        // DNS (Modules/Dns): one global provider token, zone-fenced. delete is Write, not Admin — it is the
+        // undo of set_dns_record and limited to the same four record types (never NS/SOA/MX).
+        ["list_dns_records"] = Read,
+        ["set_dns_record"] = Write,
+        ["delete_dns_record"] = Write,
     };
 
     public static readonly Dictionary<string, string> ToolCategories = new()
@@ -259,5 +265,10 @@ public static class McpPermissionLevels
         ["hetzner_disable_backups"] = "Cloud",
         ["hetzner_change_server_type"] = "Cloud",
         ["hetzner_delete_snapshot"] = "Cloud",
+
+        // DNS
+        ["list_dns_records"] = "DNS",
+        ["set_dns_record"] = "DNS",
+        ["delete_dns_record"] = "DNS",
     };
 }

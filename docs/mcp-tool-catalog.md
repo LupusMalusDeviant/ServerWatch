@@ -97,6 +97,14 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 | `get_server_cves` | read | Get the CVE findings for the host OS on one server (pending security updates and the CVE IDs they address). |
 | `list_cve_groups` | read | List DE-DUPLICATED CVEs across the whole fleet: one entry per CVE-ID with every affected server/container behind it, how long it has been open, and whether a fix exists. Use this instead of the per-target tools to avoid duplicate CVEs. |
 
+## Module `dns`
+
+| Tool | Level | Description |
+|---|---|---|
+| `delete_dns_record` | write | Delete the DNS record(s) with the given name and type in a zone at the configured provider. Only A, AAAA, CNAME and TXT can be deleted. Answers what was removed; nothing there = no-op. |
+| `list_dns_records` | read | List the DNS records of a zone (e.g. 'lupusmalus.dev') at the configured DNS provider. Names are relative to the zone ('@' = the zone itself). Optionally filter by name and/or type. Read-only. |
+| `set_dns_record` | write | Create or update one DNS record at the configured provider — idempotent: an existing record with the same name and type is updated (never duplicated), and an identical value answers 'unchanged'. Types: A (IPv4), AAAA (IPv6), CNAME (hostname), TXT. Name is relative to the zone ('holler.app' → holler.app.<zone>, '@' = zone apex). Returns before/after. |
+
 ## Module `gitdeploy`
 
 | Tool | Level | Description |
@@ -145,7 +153,7 @@ reach the tool's level, and the in-process agent is additionally capped by its t
 
 | Level | Tools |
 |---|---|
-| read | 44 |
-| write | 33 |
+| read | 45 |
+| write | 35 |
 | admin | 3 |
-| **total** | **80** |
+| **total** | **83** |
